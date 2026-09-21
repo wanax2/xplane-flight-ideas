@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+# app data (settings, logbook, trips, caches) lives in ~/.xp_flight_ideas
+.xp_flight_ideas/
+*.fms
+*.lnmpln
+*.gpx
+*.kml
