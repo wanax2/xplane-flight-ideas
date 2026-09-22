@@ -8,6 +8,7 @@ Python + Tkinter, no build step, no account, works offline.
 
 ![The briefing, the map and the performance numbers](docs/screenshot-light.png)
 
+
 ---
 
 ## What it does
@@ -34,7 +35,7 @@ Python + Tkinter, no build step, no account, works offline.
 
 <p align="center">
   <img src="docs/screenshot-dark.png" width="48%" alt="Dark mode">
-  <img src="docs/screenshot-briefing.png" width="48%" alt="A briefing">
+  <img src="docs/screenshot-briefing.png" width="48%" alt="Wonders of the world">
 </p>
 
 ---

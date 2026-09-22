@@ -1,4 +1,4 @@
-X-PLANE FLIGHT IDEAS  v6.1
+X-PLANE FLIGHT IDEAS  v6.2
 ========================
 
 Files
@@ -133,7 +133,7 @@ tick "Add Python to PATH" during install). Nothing else to install.
                     python xp_flight_ideas.py --country CA --state "British Columbia"
 
 
-   SCENIC WORLD (the "Scenic" tab, or the buttons on the left)
+   SCENIC WORLD (Explore > Scenic, or the buttons on the left)
    A separate generator that ignores "Where" and picks a scenic flight
    anywhere in the world. Four sources, each with its own tick box:
 
@@ -288,7 +288,7 @@ tick "Add Python to PATH" during install). Nothing else to install.
      the app remembers into one zip: settings, logbook, trips, spots, career.
      "Restore from a backup..." puts it back (keeping the old files as .bak).
 
-   REAL FLIGHTS HAPPENING NOW  ("Online" tab)   (v6.0)
+   REAL FLIGHTS HAPPENING NOW  (Explore > Shared routes)   (v6.0)
    "Copy a real flight" asks the OpenSky Network which aircraft are airborne
    near an airport you name, keeps the ones flying like light aircraft, and
    builds a flight from one of them: take off from the nearest field you can
@@ -296,7 +296,7 @@ tick "Add Python to PATH" during install). Nothing else to install.
    are in the notes. Free and anonymous, rate-limited by OpenSky; positions are
    a minute or two old.
 
-   ONLINE FLIGHTS (the "Online" tab - needs internet)   (v4.5)
+   ONLINE FLIGHTS (Explore > Shared routes - needs internet)   (v4.5)
    Routes that other pilots have shared, from flightplandatabase.com - tens of
    thousands of them, free, no account needed.
    - Search by departure and/or arrival airport, by tag (scenic, bush, vfr,
@@ -312,7 +312,7 @@ tick "Add Python to PATH" during install). Nothing else to install.
      raises the per-hour request limit.
 
    AIRPORT DATA FROM OURAIRPORTS  (v4.5)
-   Bottom of the "Online" tab: "Download / refresh" fetches the open OurAirports
+   Bottom of Explore > Shared routes: "Download / refresh" fetches the open OurAirports
    database (about 10 MB, once). It fills in city, region, country, IATA code,
    airport type and Wikipedia links for the airports in your scenery, which
    means better photos on the Briefing tab, a country list that's actually
@@ -321,7 +321,7 @@ tick "Add Python to PATH" during install). Nothing else to install.
    service"). Everything works without it; it just gets better with it.
 
    BUILD A TOUR  (v4.5)
-   "Build a tour..." on the Trips tab: pick an area (world or a continent), how
+   "Build a tour..." on Progress > Trips: pick an area (world or a continent), how
    many legs, and a style - Scenic highlights, Hidden gems, or Anything nearby -
    and it strings together a multi-leg tour that your aircraft can actually fly,
    saved as a trip you tick off leg by leg over several sessions.
@@ -357,7 +357,7 @@ tick "Add Python to PATH" during install). Nothing else to install.
    lowvis     - an approach down to minimums in fog or heavy haze; IFR aircraft
                 get the ILS to DH, VFR ones get a no-horizon haze flight (v4.6)
 
-   SCORING AND LOGBOOK (the "Logbook" tab)
+   SCORING AND LOGBOOK (Progress > Logbook)
    Tick "Score the flight and add it to the logbook" on the Fly tab. The app
    watches the flight and grades every landing: touchdown rate, how far past
    the threshold, distance off the centreline, plus smoothness and whether you
@@ -367,12 +367,12 @@ tick "Add Python to PATH" during install). Nothing else to install.
    CSV. Landing scoring needs the runway data, so rescan scenery once if the
    airport shows as unknown.
 
-   TRIPS (the "Trips" tab)
+   TRIPS (Progress > Trips)
    "Make a trip" on the Briefing tab turns any multi-stop idea into a trip you
    fly leg by leg over several sessions. Pick a leg, press "Fly this leg" and it
    becomes the current flight; when the score is saved the leg is ticked off.
 
-   EXPORT / PRINT (button on the Briefing tab)
+   EXPORT / PRINT (the "Save" and "More" buttons on the Briefing tab)
    - Printable briefing sheet (HTML, opens in your browser - Ctrl+P to print)
    - Nav log: headings, groundspeed, time and fuel per leg for the planned wind
    - .fms for the X-Plane GPS, GPX (Little Navmap, SkyDemon), KML (Google Earth)
@@ -380,7 +380,7 @@ tick "Add Python to PATH" during install). Nothing else to install.
 
 
    IN FLIGHT (v3.5)
-   - "Live flight" tab: your aircraft drawn on the route map, groundspeed,
+   - Fly it > "In flight": your aircraft drawn on the route map, groundspeed,
      height, distance and time to the next stop, miles flown and fuel used.
    - "Kneeboard" button: a small always-on-top window with the mission, the
      live numbers and a checklist for each phase, tailored to your aircraft
@@ -402,7 +402,7 @@ tick "Add Python to PATH" during install). Nothing else to install.
      free, a little slower, cached on disk).
    - "Forecast" fetches the destination's TAF.
 
-   CAREER (the "Career" tab)
+   CAREER (Progress > Career)
    Ratings from Student to Legend based on hours and landings, twenty badges
    (greaser, world tour, airport collector, hard IFR...), and "Today's
    challenge" - a flight generated from the date, the same every time, so you
@@ -519,6 +519,23 @@ WHERE THE ONLINE DATA COMES FROM
    opentopodata.org             terrain elevations
    All of them are optional. The app works with no internet at all - it just
    uses your own X-Plane scenery instead.
+
+
+WHAT'S NEW IN 6.2
+   A tidy-up, no new flying.
+   - Five tabs instead of twelve. Briefing and Fly it are where they always
+     were; the rest moved into two groups with their own little tab strips:
+       Fly it   > Set it up | In flight
+       Explore  > Scenic | North America | Worldwide | Shared routes
+       Progress > Career | Logbook | Trips | Messages
+   - The briefing's row of nine buttons is now Copy, Save and More. Everything
+     that was there is still there, one click further in.
+   - New Settings window: X-Plane folder, rescan, add-on scenery preference and
+     the theme, all in one place. The left panel now shows a single line saying
+     what's loaded, which is all you need day to day.
+   - The left panel fits on the screen without scrolling, the panel is a little
+     wider so button labels stop getting cut off, and the scenery-type filter
+     on the Scenic tab wraps onto two rows.
 
 
 WHAT'S NEW IN 6.1

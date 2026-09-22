@@ -39,7 +39,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from xp_wx import CONTINENTS, in_area   # noqa: E402  (lat/lon boxes for continents)
 
-VERSION = "6.1"
+VERSION = "6.2"
 CACHE_DIR = Path.home() / ".xp_flight_ideas"
 CACHE_FORMAT = 8
 
