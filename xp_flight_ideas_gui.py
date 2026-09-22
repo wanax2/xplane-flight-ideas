@@ -46,6 +46,7 @@ import xp_radio                        # noqa: E402
 import xp_web                          # noqa: E402
 import xp_qr                           # noqa: E402
 import xp_scenic as scenic              # noqa: E402
+import xp_wonders as wonders            # noqa: E402
 import xp_acf                           # noqa: E402
 import xp_score                         # noqa: E402
 import xp_export as exp                 # noqa: E402
@@ -539,9 +540,11 @@ class App(tk.Tk):
         qb = ttk.Frame(f, style="Bg.TFrame")
         qb.pack(fill="x")
         for i, (txt, cmd) in enumerate([("Scenic surprise", self.scenic_surprise),
+                                        ("Anywhere on earth", self.anywhere),
                                         ("Bad weather now", self.dangerous_weather),
                                         ("Today's challenge", self.daily_challenge),
-                                        ("Browse airports", self.open_picker)]):
+                                        ("Browse airports", self.open_picker),
+                                        ("Wonders near me", self.wonders_near)]):
             ttk.Button(qb, text=txt, style="Quiet.TButton", command=cmd).grid(
                 row=i // 2, column=i % 2, sticky="ew", padx=(0, 4) if i % 2 == 0 else 0, pady=2)
         qb.columnconfigure(0, weight=1)
@@ -1204,6 +1207,7 @@ class App(tk.Tk):
             wx_radius=self.num(self.v_wxrad, 300), wx_home=self.v_wxhome.get(), wx_usable=self.v_wxusable.get(),
             wx_area=self.v_wxarea.get(), wx_min=self.num(self.v_wxmin, 2), wx_goto=self.v_wxgoto.get(),
             sc_famous=self.v_scfam.get(), sc_gems=self.v_scgem.get(), sc_area=self.v_scarea.get(),
+            sc_wonders=self.v_scwon.get(), sc_random=self.v_scrnd.get(),
             sc_tags=[k for k, v in self.v_sctags.items() if v.get()], sc_n=int(self.num(self.v_scn, 12)),
             insim=self.v_insim.get(), speak=self.v_speak.get(), knee=self.v_knee.get(),
             surprise=self.v_surprise.get(), sur_lo=self.num(self.v_sur_lo, 10), sur_hi=self.num(self.v_sur_hi, 40),
@@ -1529,6 +1533,110 @@ class App(tk.Tk):
             self.open_picker()
         ttk.Button(t2, text="Show me one of these airports", style="Big.TButton",
                    command=fly_it).pack(anchor="e", pady=(6, 0))
+
+    # ======================================================================
+    # Wonders of the world
+    # ======================================================================
+    def _home_ref(self):
+        """The airport we measure 'near me' from: the From box, the near box, or the current idea."""
+        for ident in (self.v_from.get().strip(), self.v_near.get().strip()):
+            if ident:
+                a = next((x for x in self.airports if x["id"].upper() == ident.upper()), None)
+                if a:
+                    return a
+        if self.idea:
+            return self.idea.stops[0]
+        return self.airports[0] if self.airports else None
+
+    def wonders_near(self):
+        """The 400-odd places worth looking at, sorted by how far they are from you."""
+        try:
+            finder = self.scenic_finder()
+        except RuntimeError as e:
+            messagebox.showinfo("Wonders", str(e))
+            return
+        home = self._home_ref()
+        if not home:
+            messagebox.showinfo("Wonders", "Airports are still loading - give it a moment.")
+            return
+        win = tk.Toplevel(self)
+        win.title("Wonders of the world")
+        win.geometry(f"{self.theme.px(940)}x{self.theme.px(580)}")
+        win.transient(self)
+        self.theme.track(win, "window")
+        head = ttk.Frame(win, style="Bg.TFrame", padding=(12, 10, 12, 4))
+        head.pack(fill="x")
+        ttk.Label(head, text="Wonders of the world", style="Head.TLabel").pack(side="left")
+        ttk.Label(head, text="   Measured from:", style="MutedBg.TLabel").pack(side="left")
+        v_ref = tk.StringVar(value=home["id"])
+        ttk.Entry(head, textvariable=v_ref, width=8).pack(side="left", padx=4)
+        v_reach = tk.BooleanVar(value=True)
+        ttk.Checkbutton(head, text="Only ones I can reach", variable=v_reach).pack(side="left", padx=8)
+        lbl = ttk.Label(win, text="", style="MutedBg.TLabel")
+        lbl.pack(anchor="w", padx=12)
+
+        body = ttk.Frame(win, padding=(8, 6))
+        body.pack(fill="both", expand=True)
+        cols = ("name", "what", "dist")
+        tv = ttk.Treeview(body, columns=cols, show="headings", selectmode="browse")
+        for col, h, w in zip(cols, ("Wonder", "What you're looking at", "Distance"), (210, 470, 90)):
+            tv.heading(col, text=h)
+            tv.column(col, width=w, anchor="w" if col in ("name", "what") else "e",
+                      stretch=col == "what")
+        self.theme.fit_columns(tv)
+        sb = ttk.Scrollbar(body, orient="vertical", command=tv.yview)
+        tv.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        tv.pack(fill="both", expand=True)
+
+        def fill():
+            ident = v_ref.get().strip().upper()
+            ref = next((x for x in self.airports if x["id"].upper() == ident), home)
+            v_ref.set(ref["id"])
+            reach = {c["title"] for c in finder.wonders()} if v_reach.get() else None
+            tv.delete(*tv.get_children())
+            rows = []
+            for w in wonders.ALL:
+                if reach is not None and w["name"] not in reach:
+                    continue
+                rows.append((wonders.nm(ref["lat"], ref["lon"], w["lat"], w["lon"]), w))
+            rows.sort(key=lambda x: x[0])
+            for d, w in rows:
+                tv.insert("", "end", values=(w["name"], w["text"], f"{d:,.0f} nm"))
+            near = sum(1 for d, _ in rows if d <= 300)
+            lbl.config(text=f"{len(rows):,} places shown, {near} of them within 300 nm of {ref['id']}. "
+                            f"Untick the box to see all {len(wonders.ALL):,}.")
+
+        def use(setup):
+            s = tv.selection()
+            if not s:
+                messagebox.showinfo("Wonders", "Pick one from the list first.")
+                return
+            name = tv.item(s[0], "values")[0]
+            cand = next((c for c in finder.wonders() if c["title"] == name), None)
+            if not cand:
+                messagebox.showinfo("Wonders", f"There is no runway anywhere near {name} in your "
+                                               f"scenery, so there's no flight to build.")
+                return
+            idea = finder.to_idea(cand)
+            if not idea:
+                messagebox.showinfo("Wonders", f"{name} is too far from the nearest usable runway for "
+                                               f"this aeroplane. Try one with longer legs.")
+                return
+            win.destroy()
+            self._add_idea(idea)
+            self.nb.select(1 if setup else 0)
+
+        ttk.Button(head, text="Refresh", style="Quiet.TButton", command=fill).pack(side="right")
+        b = ttk.Frame(win, padding=(12, 0, 12, 10))
+        b.pack(fill="x")
+        ttk.Button(b, text="Open briefing", command=lambda: use(False)).pack(side="left")
+        ttk.Button(b, text="Set up in X-Plane  >>", style="Big.TButton",
+                   command=lambda: use(True)).pack(side="left", padx=6)
+        ttk.Label(b, text="Most of these have no airport - the flight puts you over the top of it.",
+                  style="Muted.TLabel").pack(side="right")
+        tv.bind("<Double-1>", lambda e: use(False))
+        fill()
 
     # ======================================================================
     # Area (Where)
@@ -2084,24 +2192,35 @@ class App(tk.Tk):
         ttk.Label(r1, text="Pick from:").pack(side="left")
         self.v_scfam = tk.BooleanVar(value=c.get("sc_famous", True))
         self.v_scgem = tk.BooleanVar(value=c.get("sc_gems", True))
-        ttk.Checkbutton(r1, text="Famous scenic places", variable=self.v_scfam).pack(side="left", padx=4)
-        ttk.Checkbutton(r1, text="Hidden gems found in your scenery", variable=self.v_scgem).pack(side="left", padx=4)
+        self.v_scwon = tk.BooleanVar(value=c.get("sc_wonders", True))
+        self.v_scrnd = tk.BooleanVar(value=c.get("sc_random", False))
+        ttk.Checkbutton(r1, text="Famous routes", variable=self.v_scfam).pack(side="left", padx=4)
+        ttk.Checkbutton(r1, text=f"Natural wonders ({len(wonders.ALL)})",
+                        variable=self.v_scwon).pack(side="left", padx=4)
+        ttk.Checkbutton(r1, text="Hidden gems in your scenery", variable=self.v_scgem).pack(side="left", padx=4)
+        ttk.Checkbutton(r1, text="Random places", variable=self.v_scrnd).pack(side="left", padx=4)
         ttk.Label(r1, text="   Where:").pack(side="left")
         self.v_scarea = tk.StringVar(value=c.get("sc_area", "Whole world"))
         ttk.Combobox(r1, textvariable=self.v_scarea, values=list(core.CONTINENTS), state="readonly",
-                     width=24).pack(side="left", padx=4)
+                     width=20).pack(side="left", padx=4)
         r2 = ttk.Frame(f)
         r2.pack(fill="x", pady=4)
-        ttk.Label(r2, text="Scenery:").pack(side="left")
+        ttk.Label(r2, text="Scenery:").grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 6))
         chosen = set(c.get("sc_tags", list(scenic.TAGS)))
         self.v_sctags = {}
-        for k, lbl in scenic.TAGS.items():
+        per = 5
+        for i, (k, lbl) in enumerate(scenic.TAGS.items()):
             v = tk.BooleanVar(value=k in chosen)
             self.v_sctags[k] = v
-            ttk.Checkbutton(r2, text=lbl, variable=v).pack(side="left", padx=2)
+            ttk.Checkbutton(r2, text=lbl, variable=v).grid(row=i // per, column=1 + i % per,
+                                                           sticky="w", padx=2)
+        for col in range(1, per + 1):
+            r2.columnconfigure(col, weight=1)
         r3 = ttk.Frame(f)
         r3.pack(fill="x", pady=(2, 6))
         ttk.Button(r3, text="Surprise me!", style="Big.TButton", command=self.scenic_surprise).pack(side="left")
+        ttk.Button(r3, text="Anywhere on earth", style="Big.TButton",
+                   command=self.anywhere).pack(side="left", padx=(6, 0))
         ttk.Button(r3, text="Show me", command=self.scenic_list).pack(side="left", padx=(10, 2))
         self.v_scn = tk.StringVar(value=str(c.get("sc_n", 12)))
         ttk.Spinbox(r3, textvariable=self.v_scn, from_=1, to=50, width=4).pack(side="left")
@@ -2146,14 +2265,20 @@ class App(tk.Tk):
             self._sc_key = key
         return self._sc
 
-    def _scenic_run(self, n, then):
+    def _scenic_run(self, n, then, force_random=False):
         tags = [k for k, v in self.v_sctags.items() if v.get()]
         if not tags:
             messagebox.showinfo("Scenic world", "Tick at least one kind of scenery.")
             return
-        fam, gem, area = self.v_scfam.get(), self.v_scgem.get(), self.v_scarea.get()
-        if not (fam or gem):
-            messagebox.showinfo("Scenic world", "Tick 'Famous scenic places' and/or 'Hidden gems'.")
+        if len(tags) == len(self.v_sctags):
+            tags = None                      # everything ticked means "don't filter"
+        area = self.v_scarea.get()
+        fam = self.v_scfam.get() and not force_random
+        gem = self.v_scgem.get() and not force_random
+        won = self.v_scwon.get() and not force_random
+        rnd = self.v_scrnd.get() or force_random
+        if not (fam or gem or won or rnd):
+            messagebox.showinfo("Scenic world", "Tick at least one source to pick from.")
             return
         try:
             finder = self.scenic_finder()
@@ -2166,12 +2291,26 @@ class App(tk.Tk):
 
         def work():
             try:
-                ideas, err = finder.surprise(n, tags, area, fam, gem), None
+                ideas, err = finder.surprise(n, tags, area, fam, gem, won, rnd), None
             except Exception as e:
                 ideas, err = [], e
                 self.log(traceback.format_exc())
             self.ui(lambda: then(ideas, err))
         threading.Thread(target=work, daemon=True).start()
+
+    def anywhere(self):
+        """Throw a dart at the planet. No lists, no filters - just somewhere."""
+        def done(ideas, err):
+            self.l_sc.config(text="")
+            if err or not ideas:
+                messagebox.showinfo("Anywhere on earth",
+                                    f"Nothing found ({err})" if err else
+                                    "Nothing matched - try 'Whole world', or tick more scenery types.")
+                return
+            self._add_idea(ideas[0])
+            self.nb.select(0)
+            self.log(f"Anywhere on earth: {ideas[0].title}")
+        self._scenic_run(1, done, force_random=True)
 
     def scenic_surprise(self):
         def done(ideas, err):
@@ -2208,7 +2347,8 @@ class App(tk.Tk):
         if not i:
             return
         pics.draw_route_map(self.sc_cv, i.stops, self.airports or (), title=i.title)
-        extra = [n for n in i.notes if n.startswith(("Where", "Scenery", "Your plane"))]
+        extra = [n for n in i.notes if n.startswith(("Where", "Scenery", "Your plane", "The sight",
+                                                     "High ground", "This one tops"))]
         self.sc_txt.config(text=i.mission + "\n\n" + "\n".join(extra) +
                            f"\n\nSuggested: {i.when_text()}, {i.wx.sky_text.lower()}")
 
@@ -2317,8 +2457,11 @@ class App(tk.Tk):
                 t.insert("end", f"{tag}   ", "stoptag")
                 t.insert("end", f"{a['id']}  {a['name']}", "stop")
                 t.insert("end", f"   {a['elev']:,} ft{'  ' + loc if loc else ''}\n", "small")
-                line(core.rwy_list(a) + ("   [" + ", ".join(extra) + "]" if extra else ""), "small")
-                sc_txt = self.scenery().describe(a)
+                if a.get("wonder"):
+                    line(a.get("notes") or "A position, not an airport - fly over it.", "small")
+                else:
+                    line(core.rwy_list(a) + ("   [" + ", ".join(extra) + "]" if extra else ""), "small")
+                sc_txt = "" if a.get("wonder") else self.scenery().describe(a)
                 if sc_txt:
                     line("\u2b50 " + sc_txt, "scenery")
                 if j < len(stops) - 1:

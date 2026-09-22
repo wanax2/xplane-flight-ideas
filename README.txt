@@ -1,4 +1,4 @@
-X-PLANE FLIGHT IDEAS  v6.0
+X-PLANE FLIGHT IDEAS  v6.1
 ========================
 
 Files
@@ -9,6 +9,7 @@ Files
   xp_images.py              maps, airport diagrams, sky pictures, photos
   xp_wx.py                  live weather (current METARs from aviationweather.gov)
   xp_scenic.py              worldwide scenic-flight generator
+  xp_wonders.py             429 natural wonders and landmarks worldwide
   xp_acf.py                 reads performance out of your aircraft's .acf files
   xp_score.py               flight scoring and the logbook
   xp_export.py              nav logs, briefing sheets, GPX/KML/LNM, trips, share codes
@@ -132,15 +133,35 @@ tick "Add Python to PATH" during install). Nothing else to install.
                     python xp_flight_ideas.py --country CA --state "British Columbia"
 
 
-   SCENIC WORLD (the "Scenic" tab, or "Scenic world: surprise me!" on the left)
+   SCENIC WORLD (the "Scenic" tab, or the buttons on the left)
    A separate generator that ignores "Where" and picks a scenic flight
-   anywhere in the world:
-   - Famous scenic places: 270 hand-picked airports and routes on every
-     continent (Alps, fjords, Himalaya, Caribbean, Patagonia, Hawaii, Alaska,
-     Greenland, Uluru, Milford Sound, Victoria Falls...).
+   anywhere in the world. Four sources, each with its own tick box:
+
+   - Famous routes: 456 hand-picked airport-to-airport runs on every continent
+     (Alps, fjords, Himalaya, Caribbean, Patagonia, Hawaii, Alaska, Greenland,
+     Uluru, Milford Sound, Victoria Falls, the Nile, the Amazon, Kamchatka...).
+
+   - Natural wonders (new in v6.1): 429 places worth looking at that mostly
+     have no airport at all - Angel Falls, Everest, the Matterhorn, Iguazu,
+     the Grand Prismatic Spring, Uluru, Halong Bay, the Richat Structure,
+     Sossusvlei, Denali's Ruth Glacier, Machu Picchu, Bora Bora, Erta Ale.
+     The app finds the nearest runway your aeroplane can actually use and
+     routes you over the thing itself as a GPS waypoint, then lands you there.
+     The briefing gives its position, how high the ground goes, what height to
+     cross at - and tells you plainly when the summit is above your aircraft's
+     ceiling and you should fly alongside instead.
+
    - Hidden gems found in your scenery: airports with much higher terrain
      nearby, very high strips, islands, glaciers, lakes, fjords, canyons,
      volcanoes (from airport elevations, runways and names).
+
+   - Random places (new in v6.1): a dart thrown at the planet. Any airport
+     anywhere in your scenery, leaning towards interesting ground - big relief
+     close by, high fields, unpaved strips, water runways, high latitudes, and
+     anything within 70 nm of one of the wonders. The briefing tells you what
+     the dice picked and why it might be worth the trip. The "Anywhere on
+     earth" button does this on its own, ignoring the other three sources.
+
    - Ten kinds of scenery: mountains, islands, coast & beaches, glaciers &
      Arctic, canyons & desert, volcanoes, lakes/rivers/fjords, landmarks &
      cities, jungle & wetlands, bush & backcountry.
@@ -150,6 +171,17 @@ tick "Add Python to PATH" during install). Nothing else to install.
      and land at the nearest airport it can use. Seasons follow the hemisphere.
    - Command line:  python xp_flight_ideas.py --scenic-world -n 5
                     python xp_flight_ideas.py --scenic-world mountains,ice --continent Europe
+                    python xp_flight_ideas.py --scenic-world --scenic-source wonders
+                    python xp_flight_ideas.py --anywhere -n 5
+                    python xp_flight_ideas.py --wonders-near KBJC
+
+   WONDERS NEAR ME ("Wonders near me" button on the left)
+   All 429 places in one list, sorted by how far they are from you, with what
+   you'd be looking at. Type a different airport code at the top to measure
+   from somewhere else. "Only ones I can reach" hides anything with no usable
+   runway near it in your scenery - so the list shrinks to what you can
+   actually go and see today. Pick one and press "Open briefing" or
+   "Set up in X-Plane".
 
    DANGEROUS WEATHER NOW (button on the left)
    One click: downloads current weather if needed and lists the worst weather
@@ -487,3 +519,18 @@ WHERE THE ONLINE DATA COMES FROM
    opentopodata.org             terrain elevations
    All of them are optional. The app works with no internet at all - it just
    uses your own X-Plane scenery instead.
+
+
+WHAT'S NEW IN 6.1
+   - 429 natural wonders worldwide as a new source of flights. Most of them
+     have no airport; the app finds the nearest runway you can use and puts
+     the wonder itself in the route as a GPS waypoint you fly over.
+   - Another 134 famous scenic routes, bringing that list to 456.
+   - "Anywhere on earth": a genuinely random destination, anywhere in your
+     scenery, weighted towards ground worth looking at.
+   - "Wonders near me": all 429 sorted by distance from wherever you are, with
+     the unreachable ones hidden if you want.
+   - The scenic tab now has a tick box per source, and the scenery-type filter
+     wraps onto two rows so all ten are visible.
+   - New command line: --anywhere, --wonders-near ICAO, and --scenic-source
+     now takes a list (famous,wonders,gems,random,all).

@@ -1,12 +1,19 @@
 """
 xp_scenic.py - "anywhere in the world" scenic flight generator.
 
-Two sources:
+Four sources:
   * FAMOUS  - a hand-picked list of well-known scenic airports and routes on every continent
+  * WONDERS - the scenic places themselves (xp_wonders.py): 400-odd waterfalls,
+              volcanoes, glaciers, gorges, reefs and ruins that mostly have no
+              airport at all. The finder puts you over the thing itself and lands
+              you at the nearest runway your plane can use.
   * GEMS    - "hidden gems" found automatically in YOUR X-Plane scenery: airports
               surrounded by much higher terrain (judged from nearby airport
               elevations), high-altitude strips, islands, glaciers, lakes, fjords,
               canyons... (from the airport data and names)
+  * RANDOM  - a dart thrown at the planet. Any airport, anywhere in your scenery,
+              with a light bias towards interesting ground. This is the one that
+              takes you places no list would ever have suggested.
 
 Every pick is checked against your scenery and aircraft. If your plane can't use
 the famous strip itself, the flight overflies it and lands at the nearest
@@ -17,7 +24,12 @@ from __future__ import annotations
 import math
 import re
 
+import xp_wonders as wonders_db
 from xp_wx import CONTINENTS, in_area
+
+# How far from a natural wonder we will accept a runway. Bigger than it sounds:
+# Angel Falls, the Putorana plateau and the Empty Quarter have nothing close.
+WONDER_R = 130.0
 
 TAGS = {
     "mountains": "Mountains",
@@ -319,6 +331,198 @@ FAMOUS = [
     (["KTKA", "PATK"], "Alaska bush strips", "bush mountains", "Talkeetna out to the gravel bars under Denali."),
     (["U76", "KSUN"], "Idaho backcountry", "bush mountains", "Mountain Home down the Middle Fork strips to Sun Valley."),
     (["CYPY", "CYYQ"], "Hudson Bay", "ice coast bush", "Fort Chipewyan across the barrens to Churchill."),
+    # ---------------- more again, added in v6.1 ----------------
+    # North America
+    (["KFLG", "KSEZ"], "Flagstaff to Sedona", "desert mountains", "Off the 7,000 ft plateau and down into the red rocks."),
+    (["KPRC", "KGCN"], "Prescott to the canyon", "desert", "Granite Dells, the Verde valley and the South Rim."),
+    (["KSGU", "KCDC"], "Zion's back door", "desert", "St George up past Zion's east side to Cedar City."),
+    (["KTUS", "KOLS"], "Sonoran desert", "desert", "Saguaro forest and sky islands down to the border."),
+    (["KROW", "KCNM"], "Guadalupe escarpment", "desert mountains", "Roswell south past the reef to Carlsbad."),
+    (["KMAF", "KMRF"], "Big Bend country", "desert", "Out of the oil patch into the Davis Mountains."),
+    (["KELP", "KTCS"], "Rio Grande north", "desert water", "El Paso up the river to Truth or Consequences."),
+    (["KSAF", "KTAD"], "Sangre de Cristo", "mountains", "Santa Fe north along the last of the Rockies."),
+    (["KASE", "KGUC"], "Elk Mountains", "mountains", "Aspen over the ridge to Gunnison."),
+    (["KMTJ", "KTEX"], "San Juans", "mountains", "Montrose into the deepest corner of Colorado."),
+    (["KGJT", "KMTJ"], "Grand Mesa", "mountains desert", "The largest flat-topped mountain in the world."),
+    (["KRIL", "KEGE"], "Glenwood Canyon", "mountains water", "Follow the Colorado up the canyon to Eagle."),
+    (["KLAR", "KRKS"], "Red Desert", "desert", "Laramie west across the Great Divide Basin."),
+    (["KCPR", "KRIW"], "Wind River Range", "mountains ice", "Casper west to Riverton under Gannett Peak."),
+    (["KBIL", "KSHR"], "Bighorns", "mountains", "Billings south-east over the range to Sheridan."),
+    (["KBZN", "KWYS"], "Gallatin valley", "mountains", "Bozeman up the canyon to West Yellowstone."),
+    (["KMSO", "KSMN"], "Bitterroots", "mountains bush", "Missoula down the valley and over the divide to Salmon."),
+    (["KSUN", "KBOI"], "Sawtooth valley", "mountains water", "Sun Valley down the Salmon River to Boise."),
+    (["KLWS", "KPUW"], "Hells Canyon rim", "water mountains", "Lewiston over the deepest gorge in America."),
+    (["KPDT", "KDLS"], "Columbia Gorge east", "water desert", "Pendleton down the river to The Dalles."),
+    (["KYKM", "KELN"], "Cascades east", "mountains volcano", "Yakima north with Rainier and Adams on the wing."),
+    (["KPAE", "KORS"], "Puget Sound", "islands water", "Everett across the water to Orcas Island."),
+    (["KHQM", "KAST"], "Washington coast", "coast", "Grays Harbor south to the mouth of the Columbia."),
+    (["KOTH", "KCEC"], "Redwood coast", "coast jungle", "Coos Bay down to the tallest trees on earth."),
+    (["KACV", "KUKI"], "Lost Coast", "coast mountains", "Eureka over King Range to the Ukiah valley."),
+    (["KIPL", "KBLH"], "Lower Colorado", "desert water", "Below sea level, then up the river to Blythe."),
+    (["KAUS", "KDRT"], "Texas hill country", "water desert", "Austin west over the limestone hills to the border."),
+    (["KHOU", "KGLS"], "Galveston Bay", "coast water", "Ship channel, the bay and the island."),
+    (["KNEW", "KHUM"], "Bayou country", "water jungle", "New Orleans out over the marsh to Houma."),
+    (["KTLH", "KPFN"], "Forgotten Coast", "coast", "Tallahassee to the Panhandle beaches."),
+    (["KSRQ", "KAPF"], "Florida Gulf coast", "coast water", "Sarasota south past the barrier islands to Naples."),
+    (["KILM", "KMYR"], "Carolina coast", "coast", "Wilmington up the beaches to Myrtle Beach."),
+    (["KRDU", "KAVL"], "Blue Ridge", "mountains jungle", "Raleigh west into the Appalachians."),
+    (["KTRI", "KGKT"], "Great Smoky Mountains", "mountains jungle", "Tri-Cities south over the ridges to Gatlinburg."),
+    (["KROA", "KLWB"], "Allegheny ridges", "mountains", "Roanoke north-west across parallel ridge after ridge."),
+    (["KELM", "KITH"], "Finger Lakes", "water", "Elmira north over the long narrow lakes."),
+    (["KSLK", "KPBG"], "Adirondacks", "mountains water", "Saranac Lake east to Lake Champlain."),
+    (["KBTV", "KMPV"], "Green Mountains", "mountains", "Burlington across the spine of Vermont."),
+    (["KLEB", "KHIE"], "The Notches", "mountains", "Lebanon north through Franconia to the Presidentials."),
+    (["KPWM", "KBGR"], "Maine woods", "coast bush", "Portland up the coast and inland to Bangor."),
+    (["KTVC", "KMCD"], "Lake Michigan shore", "water islands", "Traverse City north to the Straits."),
+    (["KDLH", "KINL"], "Boundary Waters", "water bush", "Duluth north over a thousand lakes to the border."),
+    (["KRAP", "KGCC"], "Devils Tower", "landmark desert", "Rapid City west past the Black Hills to the Tower."),
+    (["KBIS", "KDIK"], "North Dakota badlands", "desert", "Bismarck west to the Little Missouri breaks."),
+    (["CYXS", "CYZT"], "British Columbia coast", "coast mountains", "Prince George out to the north end of Vancouver Island."),
+    (["CYVR", "CYYJ"], "Georgia Strait", "islands water", "Vancouver across the Gulf Islands."),
+    (["CYCG", "CYXC"], "Kootenays", "mountains water", "Castlegar up the lakes to Cranbrook."),
+    (["CYYC", "CYBA"], "Front ranges", "mountains", "Calgary west into the wall of the Rockies."),
+    (["CYEG", "CYJA"], "Jasper", "mountains ice", "Edmonton south-west to the icefields."),
+    (["CYMM", "CYZF"], "Northern lakes", "water bush", "Fort McMurray north over the boreal to Yellowknife."),
+    (["CYQB", "CYBG"], "Saguenay fjord", "water mountains", "Quebec north-east up the fjord."),
+    (["CYHZ", "CYQY"], "Nova Scotia coast", "coast", "Halifax up the eastern shore to Cape Breton."),
+    (["CYYT", "CYDF"], "Newfoundland", "coast bush", "St John's west across the rock."),
+    (["CYFB", "CYRB"], "High Arctic", "ice", "Iqaluit north-west to Resolute - a long way over ice."),
+    (["PAFA", "PABT"], "Yukon River", "water bush", "Fairbanks north-west to Bettles and the Brooks Range."),
+    (["PAEN", "PAHO"], "Kenai Peninsula", "mountains ice coast", "Kenai down past the Harding Icefield."),
+    (["PACV", "PAYA"], "Gulf of Alaska", "ice coast", "Cordova east past the Bering Glacier to Yakutat."),
+    (["PADQ", "PAKN"], "Kodiak and Katmai", "islands volcano", "Across Shelikof Strait to the volcano coast."),
+    (["MMMD", "MMUN"], "Yucatan", "jungle coast", "Merida east over the cenote country to the reef."),
+    (["MMTO", "MMMX"], "Valley of Mexico", "volcano mountains", "Toluca past Popocatepetl into the basin."),
+    (["MMLP", "MMSD"], "Baja south", "coast desert", "La Paz down the cape to Land's End."),
+    (["MMHO", "MMGM"], "Sea of Cortez", "coast desert", "Hermosillo out to the Guaymas islands."),
+    (["MGGT", "MGSJ"], "Guatemalan volcanoes", "volcano", "Over Fuego and Agua to the Pacific coast."),
+    (["MROC", "MRLB"], "Costa Rica volcanoes", "volcano jungle", "San Jose north-west past Arenal to Guanacaste."),
+    (["MPMG", "MPDA"], "Chiriqui", "jungle mountains", "Panama City west to the highlands under Volcan Baru."),
+    (["TIST", "TISX"], "US Virgin Islands", "islands coast", "St Thomas over the reefs to St Croix."),
+    (["TKPK", "TFFR"], "Leeward arc", "islands volcano", "St Kitts down past Montserrat's ash to Guadeloupe."),
+    (["TFFF", "TFFG"], "French Antilles", "islands coast", "Martinique north past Dominica to St Martin."),
+    (["TTPP", "TTCP"], "Trinidad and Tobago", "islands coast", "Across the channel to Tobago's reefs."),
+    # South America
+    (["SOCA", "SMJP"], "Guiana coast", "jungle coast", "Cayenne west along the rainforest shore."),
+    (["SVCB", "SVCN"], "Angel Falls country", "jungle landmark water", "Ciudad Bolivar south to Canaima and the tepuis."),
+    (["SBBE", "SBMN"], "Amazon crossing", "jungle water", "Belem 900 miles up the river to Manaus."),
+    (["SBSV", "SBIL"], "Bahia coast", "coast", "Salvador south along the Atlantic beaches."),
+    (["SBPA", "SBFL"], "Southern Brazil", "coast islands", "Porto Alegre north to Florianopolis."),
+    (["SGAS", "SBFI"], "Parana river", "water jungle", "Asuncion east to Iguazu."),
+    (["SUMU", "SULS"], "Uruguay coast", "coast", "Montevideo east to Punta del Este."),
+    (["SAEZ", "SAZM"], "Pampas to the sea", "coast", "Buenos Aires south to the Atlantic."),
+    (["SAZN", "SAZS"], "Patagonian lakes", "mountains water", "Neuquen west into the Andean lake district."),
+    (["SAVC", "SAWE"], "Patagonian coast", "coast desert", "Comodoro south down the empty shore."),
+    (["SCFA", "SCDA"], "Atacama", "desert", "Antofagasta north over the driest desert on earth."),
+    (["SCIE", "SCTE"], "Araucania volcanoes", "volcano water", "Concepcion south past Villarrica."),
+    (["SPHI", "SPJC"], "Peruvian coast", "coast desert", "Chiclayo south down the desert shoreline."),
+    (["SPST", "SPQT"], "Upper Amazon", "jungle water", "Tarapoto down to Iquitos - no roads in or out."),
+    (["SLCB", "SLLP"], "Bolivian Andes", "mountains", "Cochabamba over the altiplano to La Paz."),
+    (["SEGU", "SEQM"], "Coast to the Andes", "mountains volcano", "Guayaquil up 9,000 ft into the Avenue of the Volcanoes."),
+    # Europe
+    (["LFMD", "LFKF"], "Cote d'Azur", "coast islands", "Cannes out across the Med to southern Corsica."),
+    (["LFLS", "LFLB"], "Chartreuse and Vercors", "mountains", "Grenoble's limestone walls and the Savoie lakes."),
+    (["LFBO", "LFBZ"], "Pyrenees foothills", "mountains coast", "Toulouse west to the Basque coast."),
+    (["LFRB", "LFRQ"], "Brittany", "coast islands", "Brest around the Pointe du Raz."),
+    (["LFRG", "LFRK"], "Normandy", "coast landmark", "Deauville west over the invasion beaches."),
+    (["EHAM", "EHGG"], "Dutch waterland", "water landmark", "Amsterdam north over the polders and the Afsluitdijk."),
+    (["EDXW", "EDHL"], "Frisian islands", "islands coast", "Sylt down the Wadden Sea to Lubeck."),
+    (["EKCH", "EKRN"], "Baltic Denmark", "islands coast", "Copenhagen east over the sea to Bornholm."),
+    (["ESGG", "ESSA"], "Swedish archipelago", "islands water", "Gothenburg across the lakes to the Stockholm skerries."),
+    (["EFTU", "EFMA"], "Aland islands", "islands water", "Turku west into six thousand islands."),
+    (["EETN", "EEKA"], "Estonian islands", "islands coast", "Tallinn west to Hiiumaa."),
+    (["EPGD", "EPSC"], "Polish Baltic", "coast", "Gdansk west along the dunes to Szczecin."),
+    (["LOWW", "LOWK"], "Austrian Alps", "mountains water", "Vienna south-west over the Alps to Carinthia's lakes."),
+    (["LHBP", "LHSM"], "Lake Balaton", "water", "Budapest south-west to the Hungarian sea."),
+    (["LROP", "LRSB"], "Carpathians", "mountains", "Bucharest north over the Fagaras wall to Transylvania."),
+    (["LBSF", "LBWN"], "Bulgaria to the Black Sea", "mountains coast", "Sofia east over the Balkan range."),
+    (["LGAV", "LGSA"], "Aegean to Crete", "islands coast", "Athens south through the Cyclades."),
+    (["LTAI", "LTAU"], "Taurus mountains", "mountains", "Antalya north over the range to Cappadocia's edge."),
+    (["LTCG", "LTCE"], "Pontic Alps", "mountains coast", "Trabzon inland over the tea hills to Erzurum."),
+    (["UGTB", "UGKO"], "Caucasus", "mountains ice", "Tbilisi west under the highest mountains in Europe."),
+    (["LEVC", "LEIB"], "Valencia to Ibiza", "islands coast", "Out across the Med to the Balearics."),
+    (["LEST", "LEVX"], "Rias Baixas", "coast water", "Santiago down Galicia's drowned valleys."),
+    (["LEXJ", "LEAS"], "Picos de Europa", "mountains coast", "Santander west with limestone peaks inland."),
+    (["LPPR", "LPBR"], "Douro valley", "water mountains", "Porto up the terraced river gorge."),
+    (["LPPD", "LPHR"], "Azores hop", "islands volcano", "Sao Miguel west across the Atlantic to Faial."),
+    (["GCTS", "GCLP"], "Teide", "volcano islands", "Tenerife around Spain's highest mountain to Gran Canaria."),
+    (["GVAC", "GVBA"], "Cape Verde", "islands volcano desert", "Sal to Boa Vista over the dunes and the sea."),
+    (["EIDW", "EIKN"], "Connemara", "coast water", "Dublin west to the Atlantic bogs and lakes."),
+    (["EGAA", "EGNS"], "Irish Sea", "islands coast", "Belfast east to the Isle of Man."),
+    (["EGPE", "EGPD"], "Moray Firth", "coast mountains", "Inverness along the firth with the Cairngorms inland."),
+    (["EGPF", "EGEO"], "Loch Lomond and the isles", "water islands", "Glasgow north-west past the loch to Oban."),
+    (["EGHR", "EGKA"], "The Solent", "coast", "Goodwood west over the Downs and the Isle of Wight."),
+    (["EGTE", "EGHE"], "Cornwall and Scilly", "coast islands", "Exeter down the peninsula and out to sea."),
+    (["ENVA", "ENBO"], "Helgeland coast", "coast islands", "Trondheim north over the Arctic Circle."),
+    (["ENKB", "ENAL"], "Atlantic Road", "coast landmark", "Kristiansund south over the bridges and skerries."),
+    (["ENZV", "ENHD"], "Lysefjord", "water mountains", "Stavanger east up the fjord under Preikestolen."),
+    (["BIRK", "BIHU"], "Iceland highlands", "volcano desert ice", "Reykjavik north across the interior to Husavik."),
+    # Africa and the Middle East
+    (["DTTA", "DTTJ"], "Tunisian Sahara", "desert coast", "Tunis south to the salt lakes and Djerba."),
+    (["DAAG", "DAAT"], "Deep Sahara", "desert mountains", "Algiers 1,000 miles south to the Hoggar."),
+    (["HECA", "HELX"], "Down the Nile", "desert water landmark", "Cairo south along the green strip to Luxor."),
+    (["LLBG", "LLER"], "Negev and the Dead Sea", "desert water", "Tel Aviv south past the lowest place on earth."),
+    (["OEJN", "OETF"], "Hejaz escarpment", "mountains desert", "Jeddah up 6,000 ft into the mountains."),
+    (["OOMS", "OOSA"], "Oman coast", "coast desert", "Muscat south-west along the edge of the Empty Quarter."),
+    (["OMSJ", "OMFJ"], "Hajar mountains", "mountains coast", "Sharjah east over the range to the Gulf of Oman."),
+    (["HAAB", "HADR"], "Rift escarpment", "volcano desert", "Addis east down to the Danakil's edge."),
+    (["HKJK", "HKKI"], "Rift valley lakes", "water bush", "Nairobi west over the escarpment to Lake Victoria."),
+    (["HTKJ", "HTMW"], "Serengeti crossing", "bush water", "Kilimanjaro west over the plains to Lake Victoria."),
+    (["FQMA", "FQBR"], "Mozambique coast", "coast islands", "Maputo north up the Indian Ocean shore."),
+    (["FVFA", "FVHA"], "Zambezi", "water bush", "Victoria Falls east to Harare."),
+    (["FLKK", "FLLI"], "Down to the falls", "water landmark", "Lusaka south-west to Livingstone."),
+    (["FYWH", "FYWB"], "Namib crossing", "desert coast", "Windhoek west down the escarpment to the sea."),
+    (["FYWH", "FYKT"], "Fish River", "desert water", "Windhoek south to the great canyon."),
+    (["FALE", "FAPM"], "Drakensberg", "mountains coast", "Durban inland to the Berg."),
+    (["FAUP", "FAKM"], "Kalahari", "desert bush", "Upington east over the red dunes to Kimberley."),
+    (["FMCZ", "FMEE"], "Indian Ocean hop", "islands volcano", "Mayotte south-east to Reunion's volcano."),
+    (["FMMI", "FMSD"], "Madagascar south", "desert jungle", "Antananarivo down to the spiny forest and the cape."),
+    (["GOOY", "GOGG"], "Casamance", "coast jungle water", "Dakar south over the Gambia to the Casamance delta."),
+    (["GABS", "GAGO"], "Niger bend", "desert water", "Bamako down the river to the edge of the Sahara."),
+    (["FKYS", "FKKD"], "Mount Cameroon", "volcano coast", "Yaounde west to the volcano on the sea."),
+    (["FOOL", "FOOG"], "Gabon coast", "jungle coast", "Libreville south over the rainforest to the delta."),
+    # Asia and the Pacific
+    (["OPIS", "OPSD"], "Karakoram", "mountains ice", "Islamabad north to Skardu, under K2 and Nanga Parbat."),
+    (["VIJP", "VIJO"], "Thar desert", "desert landmark", "Jaipur west to the blue city on the sand."),
+    (["VISR", "VILH"], "Kashmir to Ladakh", "mountains ice", "Srinagar east over the Zoji La to the Indus."),
+    (["VOML", "VOCL"], "Western Ghats", "mountains jungle coast", "Mangalore south with the escarpment inland."),
+    (["VGHS", "VGCB"], "Sundarbans", "jungle water coast", "Dhaka south over the mangroves to the bay."),
+    (["VYMD", "VYBG"], "Irrawaddy", "water landmark", "Mandalay down the river to Bagan's temples."),
+    (["VTBS", "VTBU"], "Gulf of Thailand", "coast islands", "Bangkok south-east to the islands."),
+    (["VTCC", "VTCN"], "Golden Triangle hills", "mountains jungle", "Chiang Mai east into the hill country."),
+    (["VLVT", "VLLB"], "Laos mountains", "mountains jungle", "Vientiane north up the Mekong to Luang Prabang."),
+    (["VVNB", "VVCI"], "Halong Bay", "islands water", "Hanoi east to two thousand limestone towers."),
+    (["VVDN", "VVCR"], "Vietnam coast", "coast", "Da Nang south past the Hai Van pass and the dunes."),
+    (["ZPPP", "ZPLJ"], "Tiger Leaping Gorge", "mountains water", "Kunming north-west to Lijiang and the Jade Dragon."),
+    (["ZUUU", "ZUJZ"], "Jiuzhaigou", "water mountains", "Chengdu north into the terraced lakes."),
+    (["ZGKL", "ZGGG"], "Li River karst", "jungle landmark", "Guilin's hills south-east to the delta."),
+    (["ZSHC", "ZSTX"], "Huangshan", "mountains", "Hangzhou west to the Yellow Mountains' sea of cloud."),
+    (["RJAA", "RJSS"], "Northern Honshu", "mountains coast", "Tokyo north up the spine of Japan."),
+    (["RJCH", "RJCM"], "Hokkaido east", "coast ice bush", "Hakodate north-east to the drift ice coast."),
+    (["ROAH", "ROIG"], "Yaeyama islands", "islands coast", "Okinawa south-west almost to Taiwan."),
+    (["RPLC", "RPUB"], "Luzon cordillera", "mountains landmark", "Clark north into the rice terraces."),
+    (["RPMD", "RPVP"], "Sulu Sea", "islands coast", "Davao west across the water to Palawan."),
+    (["WIII", "WARR"], "Java volcanoes", "volcano", "Jakarta east along a line of cones to Surabaya."),
+    (["WADD", "WATO"], "Komodo", "islands coast", "Bali east past Rinjani to the dragons."),
+    (["WIPP", "WIBB"], "Sumatra", "jungle volcano", "Palembang north-west over the forest."),
+    (["WAAA", "WAPP"], "Spice islands", "islands coast", "Makassar east to Ambon."),
+    (["WASS", "WAJJ"], "Raja Ampat and Papua", "islands jungle", "Sorong east along the north coast of New Guinea."),
+    (["AYPY", "AYNZ"], "Owen Stanleys", "jungle mountains bush", "Port Moresby over the Kokoda track to the Markham."),
+    (["YBAS", "YCBP"], "Central Australia", "desert bush", "Alice Springs south to the opal fields."),
+    (["YPDN", "YPGV"], "Arnhem Land", "bush jungle coast", "Darwin east over Kakadu to the Gulf."),
+    (["YBBN", "YBSU"], "Sunshine Coast", "coast", "Brisbane north up the beaches to the Glasshouse Mountains."),
+    (["YSSY", "YSNW"], "Sydney south", "coast landmark", "Out of the harbour down the sea cliffs to Jervis Bay."),
+    (["YMML", "YMHB"], "Bass Strait", "islands coast", "Melbourne south over the water to Tasmania."),
+    (["YPAD", "YPWR"], "Flinders Ranges", "desert mountains", "Adelaide north to Wilpena Pound and the outback."),
+    (["YPPH", "YGEL"], "Coral Coast", "coast desert", "Perth north up the Indian Ocean shore."),
+    (["NZAA", "NZRO"], "Bay of Plenty volcanoes", "volcano coast", "Auckland south-east to the geothermal country."),
+    (["NZCH", "NZTU"], "Canterbury to the Alps", "mountains ice", "Christchurch south-west with the divide on the wing."),
+    (["NZWN", "NZNS"], "Cook Strait", "water coast", "Wellington across to the Marlborough Sounds."),
+    (["NFTF", "NFTV"], "Tonga", "islands coast", "Tongatapu north to the Vava'u group."),
+    (["NVVV", "NVVW"], "Tanna", "volcano islands", "Port Vila south to Yasur's fireworks."),
+    (["NWWW", "NWWL"], "New Caledonia lagoon", "islands coast", "Noumea north-east over the world's biggest lagoon."),
+    (["PTKK", "PTPN"], "Micronesia", "islands coast", "Chuuk lagoon east to Pohnpei - a long way over water."),
+    (["PGUM", "PGSN"], "Marianas", "islands volcano", "Guam north to Saipan."),
 ]
 
 
@@ -334,6 +538,15 @@ KEYWORDS = [
     (re.compile(r"\b(MOUNT|MOUNTAIN|MTN|PEAK|PASS|RIDGE|ALPINE|ALPE|SIERRA|MONTE|VALLEY|CANADIAN ROCKIES)\b"), "mountains",
      "mountain country"),
 ]
+
+
+TITLES = {"famous": "World scenic: ", "gem": "Hidden gem: ",
+          "wonder": "Wonder of the world: ", "random": "Anywhere on earth: "}
+
+
+def fmt_ll(lat, lon):
+    """A position you can read out loud, and type into the GPS."""
+    return (f"{abs(lat):.3f}{'N' if lat >= 0 else 'S'} {abs(lon):.3f}{'E' if lon >= 0 else 'W'}")
 
 
 def _d(a, b):
@@ -369,6 +582,36 @@ class ScenicFinder:
                                   SimpleNamespace(country="ANY", include_private=include_private))
         self.by_id = self.gen.by_id
         self._gems = None
+        self._wonders = None
+        self._relief = None
+        self._idx = None
+        self._pools = {}
+        self._rand_seen = set()
+
+    # ---- a coarse spatial index, so we don't scan 30,000 airports per lookup --
+    def _index(self):
+        if self._idx is None:
+            idx = {}
+            for a in self.gen.pool:
+                idx.setdefault((int(a["lat"] // 1), int(a["lon"] // 1)), []).append(a)
+            self._idx = idx
+        return self._idx
+
+    def near_pool(self, lat, lon, r, rmin=0.0):
+        """Every usable airport within r nm of a position. Bucketed, so it's quick."""
+        idx = self._index()
+        c = {"lat": lat, "lon": lon}
+        dlat = int(r / 60.0) + 1
+        span = 60.0 * max(0.02, math.cos(math.radians(max(-89.0, min(89.0, lat)))))
+        dlon = min(180, int(r / span) + 1)
+        out = []
+        for i in range(int(lat // 1) - dlat, int(lat // 1) + dlat + 1):
+            for j in range(int(lon // 1) - dlon, int(lon // 1) + dlon + 1):
+                for a in idx.get((i, ((j + 180) % 360) - 180), ()):
+                    dd = _d(c, a)
+                    if rmin <= dd <= r:
+                        out.append(a)
+        return out
 
     # ---- helpers --------------------------------------------------------
     def usable(self, a):
@@ -406,6 +649,137 @@ class ScenicFinder:
                 out.append({"src": "famous", "title": title, "tags": tset, "text": text, "sights": aps,
                             "stops": stops, "overfly": overfly})
         return out
+
+    # ---- natural wonders -----------------------------------------------------
+    def _compute_wonders(self):
+        """Match every wonder in the world to the nearest runway you can use."""
+        out = []
+        for w in wonders_db.ALL:
+            wp = wonders_db.waypoint(w)
+            near = self.near_pool(w["lat"], w["lon"], WONDER_R)
+            if not near:
+                continue                       # nothing within reach in this scenery
+            dest = min(near, key=lambda a: _d(wp, a))
+            out.append({"src": "wonder", "title": w["name"], "tags": set(w["tags"]),
+                        "text": w["text"], "sights": [wp], "stops": [dest], "overfly": [],
+                        "wp": wp, "msl": w["msl"], "away": _d(wp, dest)})
+        out.sort(key=lambda c: c["away"])
+        self._wonders = out
+
+    def wonders(self, tags=None, area="Whole world"):
+        if self._wonders is None:
+            self._compute_wonders()
+        out = self._wonders
+        if tags:
+            out = [w for w in out if w["tags"] & set(tags)]
+        if area and area != "Whole world":
+            out = [w for w in out if in_area(w["wp"], area)]
+        return out
+
+    # ---- random: a dart thrown at the planet ---------------------------------
+    def _relief_grid(self):
+        """Roughest terrain in each half-degree cell, from the airport elevations."""
+        if self._relief is None:
+            cell, mx = 0.5, {}
+            for a in self.all:
+                k = (int(a["lat"] // cell), int(a["lon"] // cell))
+                mx[k] = max(mx.get(k, -9999), a["elev"])
+            self._relief = (cell, mx)
+        return self._relief
+
+    def interest(self, a):
+        """How promising does this airport look, sight unseen? Returns (score, reasons)."""
+        cell, mx = self._relief_grid()
+        ci, cj = int(a["lat"] // cell), int(a["lon"] // cell)
+        hi = max(mx.get((ci + i, cj + j), -9999) for i in (-1, 0, 1) for j in (-1, 0, 1))
+        relief = hi - a["elev"]
+        score, why, tags = 1.0, [], set()
+        if relief >= 1500:
+            score += min(4.0, relief / 1500.0)
+            tags.add("mountains")
+            why.append(f"ground about {round(relief, -2):,.0f} ft higher close by")
+        if a["elev"] >= 5000:
+            score += min(2.0, a["elev"] / 5000.0)
+            tags.add("mountains")
+            why.append(f"the field itself is at {a['elev']:,} ft")
+        name = a["name"].upper()
+        hits = 0
+        for rx, tag, text in KEYWORDS:
+            if rx.search(name) and hits < 2:
+                tags.add(tag)
+                score += 1.0
+                hits += 1
+                why.append(text)
+        if any(r["s"] == "water" for r in a["rwys"]):
+            score += 1.0
+            tags.add("water")
+            why.append("a water runway")
+        if abs(a["lat"]) > 60:
+            score += 1.0
+            tags.add("ice")
+            why.append("a high latitude, so long light and long shadows")
+        if any(r["s"] in ("grass", "dirt", "gravel", "sand") for r in a["rwys"]):
+            score += 0.5
+            tags.add("bush")
+            why.append("an unpaved runway")
+        w = wonders_db.near(a["lat"], a["lon"], 70)
+        if w:
+            score += 2.5
+            tags |= w[0][1]["tags"]
+            why.append(f"{w[0][1]['name']} about {w[0][0]:.0f} nm away")
+        return score, why, tags, (w[0][1] if w else None)
+
+    def _pool_for(self, area):
+        key = area or "Whole world"
+        if key not in self._pools:
+            p = list(self.gen.pool)
+            if key != "Whole world":
+                p = [a for a in p if in_area(a, key)]
+            self._pools[key] = p
+        return self._pools[key]
+
+    def random_world(self, n=1, area="Whole world", tags=None, bias=True, fresh=True):
+        """Somewhere random on earth. Not a list - a dart in the map.
+
+        bias  - lean towards interesting ground rather than a flat field in Ohio
+        fresh - don't hand back the same place twice in one session
+        """
+        rng = self.gen.rng
+        pool = self._pool_for(area)
+        if not pool:
+            return []
+        ideas, tries = [], 0
+        while len(ideas) < n and tries < n * 40:
+            tries += 1
+            if bias:
+                sample = [pool[rng.randrange(len(pool))] for _ in range(min(len(pool), 40))]
+                scored = [(self.interest(a), a) for a in sample]
+                scored.sort(key=lambda x: -x[0][0])
+                (score, why, tg, wonder), dest = scored[0]
+            else:
+                dest = pool[rng.randrange(len(pool))]
+                score, why, tg, wonder = self.interest(dest)
+            if tags and not (tg & set(tags)):
+                continue
+            if fresh and dest["id"] in self._rand_seen:
+                continue
+            where = ", ".join(x for x in (dest.get("city"), dest.get("state"),
+                                          dest.get("country") or dest.get("iso")) if x)
+            text = (f"The dice picked {dest['id']} - {dest['name'].title()}"
+                    + (f", {where}" if where else "") + ". "
+                    + ("What's interesting about it: " + ", ".join(dict.fromkeys(why)) + "."
+                       if why else "Nothing famous here at all, which is rather the point. "
+                                   "Go and look at somewhere nobody flies."))
+            cand = {"src": "random", "title": dest["name"].title(), "tags": tg or {"bush"},
+                    "text": text, "sights": [dest], "stops": [dest], "overfly": [], "score": score}
+            if wonder and rng.random() < 0.7:
+                cand["wp"] = wonders_db.waypoint(wonder)
+                cand["msl"] = wonder["msl"]
+            idea = self.to_idea(cand)
+            if idea:
+                self._rand_seen.add(dest["id"])
+                ideas.append(idea)
+        return ideas
 
     # ---- hidden gems ----------------------------------------------------------
     def _compute_gems(self):
@@ -468,10 +842,12 @@ class ScenicFinder:
         return out
 
     # ---- making flights -------------------------------------------------------
-    def candidates(self, tags=None, area="Whole world", famous=True, gems=True):
+    def candidates(self, tags=None, area="Whole world", famous=True, gems=True, wonders=True):
         c = []
         if famous:
             c += self.famous(tags, area)
+        if wonders:
+            c += self.wonders(tags, area)
         if gems:
             c += self.gems(tags, area)[:600]
         return c
@@ -479,10 +855,15 @@ class ScenicFinder:
     def to_idea(self, cand):
         core, g, rng = self.core, self.gen, self.rng
         stops = list(cand["stops"])
+        wp = cand.get("wp")
         if len(stops) == 1:
             dest = stops[0]
             R = min(self.ac["range"] * 0.4, 140)
-            deps = g.within(dest, 25, R) or g.within(dest, 8, R * 1.5)
+            # With a wonder in the middle, measure from the wonder, so the route is
+            # departure -> sight -> runway rather than a long detour on one side.
+            anchor = wp or dest
+            deps = ([a for a in self.near_pool(anchor["lat"], anchor["lon"], R, 25) if a["id"] != dest["id"]] or
+                    [a for a in self.near_pool(anchor["lat"], anchor["lon"], R * 1.5, 8) if a["id"] != dest["id"]])
             if not deps:
                 return None
             dep = g.pick(deps, lambda a: (3 if a["tower"] else 1) * (1 if 35 <= _d(a, dest) <= 100 else 0.4))
@@ -504,22 +885,77 @@ class ScenicFinder:
         for sight, sub in cand["overfly"]:
             notes.append(f"Your plane can't use {sight['id']} ({sight['name']}) - overfly it and land at "
                          f"{sub['id']} {sub['name']}, {_d(sight, sub):.0f} nm away.")
-        title = ("World scenic: " if cand["src"] == "famous" else "Hidden gem: ") + cand["title"]
+        # A natural wonder goes in as a waypoint between the last two stops: you fly
+        # over the thing itself, then land at the nearest runway you can use.
+        over = []
+        if wp is not None and len(stops) >= 2:
+            away = _d(wp, stops[-1])
+            stops = stops[:-1] + [wp, stops[-1]]
+            legs = sum(_d(stops[k], stops[k + 1]) for k in range(len(stops) - 1))
+            if legs > self.ac["range"] * 0.85:
+                return None                      # too far for this aeroplane to make sense of
+            over.append(wp["id"])
+            notes.insert(1, f"The sight itself is at {fmt_ll(wp['lat'], wp['lon'])} - there is no runway there. "
+                            f"Fly over it, then land at {stops[-1]['id']} {stops[-1]['name'].title()}, "
+                            f"{away:.0f} nm away. About {legs:.0f} nm in total.")
+            msl = int(cand.get("msl") or 0)
+            if msl:
+                cross = int(round((msl + 1500) / 500.0) * 500)
+                ceil = int(self.ac.get("ceiling") or 0)
+                if ceil and msl + 500 > ceil:
+                    notes.insert(2, f"This one tops out at about {msl:,} ft and your aircraft runs out of air "
+                                    f"around {ceil:,} ft, so you are not going over it. Fly alongside instead, "
+                                    f"a few miles off and well below the summit - which is the better view anyway.")
+                else:
+                    notes.insert(2, f"High ground here goes to about {msl:,} ft. Plan to cross no lower than "
+                                    f"{cross:,} ft, and remember that big terrain makes its own weather and "
+                                    f"its own downdraughts.")
+        title = TITLES.get(cand["src"], "Scenic: ") + cand["title"]
         idea = core.Idea("scenic", title, stops, cand["text"], month=m, tod=tod, wx=wx, notes=notes,
-                         wx_at=stops[-1])
+                         wx_at=stops[-1], overfly=over)
         idea.scenic = cand
         return idea
 
-    def surprise(self, n=1, tags=None, area="Whole world", famous=True, gems=True):
-        fam = self.famous(tags, area) if famous else []
-        gem = self.gems(tags, area)[:600] if gems else []
-        self.rng.shuffle(fam)
-        self.rng.shuffle(gem)
+    def surprise(self, n=1, tags=None, area="Whole world", famous=True, gems=True,
+                 wonders=True, random_places=False):
+        """A mixed handful from whichever sources are switched on."""
+        piles = []
+        if famous:
+            piles.append((0.30, list(self.famous(tags, area))))
+        if wonders:
+            piles.append((0.34, list(self.wonders(tags, area))))
+        if gems:
+            piles.append((0.24, list(self.gems(tags, area))[:600]))
+        piles = [(w, p) for w, p in piles if p]
+        for _, p in piles:
+            self.rng.shuffle(p)
         ideas, seen = [], set()
-        while len(ideas) < n and (fam or gem):
-            src = fam if fam and (not gem or self.rng.random() < 0.55) else gem
-            c = src.pop()
-            key = c["stops"][-1]["id"]
+        rnd_share = 0.28 if random_places else 0.0
+        guard = 0
+        while len(ideas) < n and guard < n * 80 and (piles or random_places):
+            guard += 1
+            if random_places and (not piles or self.rng.random() < rnd_share):
+                want = (n - len(ideas)) if not piles else 1
+                got = self.random_world(max(1, want), area, tags)
+                for gi in got:
+                    k = gi.stops[-1]["id"] + "/" + gi.title
+                    if k not in seen:
+                        seen.add(k)
+                        ideas.append(gi)
+                if not piles and not got:
+                    break                      # nowhere left to go
+                continue
+            total = sum(w for w, _ in piles)
+            r, pick = self.rng.random() * total, piles[-1]
+            for w, p in piles:
+                r -= w
+                if r <= 0:
+                    pick = (w, p)
+                    break
+            c = pick[1].pop()
+            if not pick[1]:
+                piles = [x for x in piles if x[1]]
+            key = c["stops"][-1]["id"] + "/" + c["title"]
             if key in seen:
                 continue
             i = self.to_idea(c)

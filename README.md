@@ -14,7 +14,11 @@ Python + Tkinter, no build step, no account, works offline.
 
 **Generates flights worth making.** 43 mission types, from the $100 hamburger to a low-visibility approach down to minimums, a mountain-pass crossing, a survey grid, a poker run or a search pattern. Pick the kinds you feel like, press Generate, get a briefing.
 
-**Flies you somewhere beautiful.** 270 hand-picked scenic places worldwide across ten categories (mountains, islands, coast, glaciers, canyons, volcanoes, water, landmarks, jungle, bush), plus "hidden gems" found in your own scenery from terrain, runway and name clues.
+**Flies you somewhere beautiful.** 456 hand-picked scenic routes worldwide across ten categories (mountains, islands, coast, glaciers, canyons, volcanoes, water, landmarks, jungle, bush), plus "hidden gems" found in your own scenery from terrain, runway and name clues.
+
+**Takes you to 429 natural wonders — most of which have no airport.** Angel Falls, Everest, the Matterhorn, Iguazu, Uluru, Halong Bay, Sossusvlei, the Richat Structure, the Grand Prismatic Spring, Erta Ale's lava lake. The app finds the nearest runway your aeroplane can actually use, routes you over the thing itself as a GPS waypoint, and tells you how high the ground goes — or says plainly that the summit is above your ceiling and you should fly alongside instead.
+
+**Or throws a dart at the planet.** "Anywhere on earth" picks a genuinely random destination out of your own scenery, leaning towards ground worth looking at: big relief nearby, high fields, gravel strips, water runways, high latitudes. It tells you what the dice picked and why it might be worth the trip.
 
 **Uses the scenery you actually installed.** It reads `Custom Scenery` and `scenery_packs.ini` and knows which airports come from add-on packs and which map tiles have ortho or custom mesh. Then it can *favour* those places — or use *only* them. It will also tell you which add-on airports you have never once flown into.
 
@@ -60,6 +64,8 @@ python xp_flight_ideas.py --from KBJC -n 5           # five ideas out of one air
 python xp_flight_ideas.py --world --mission scenic   # anywhere in the world
 python xp_flight_ideas.py --country NZ --save        # and write .fms plans
 python xp_flight_ideas.py --live-weather ts          # fly into a real thunderstorm
+python xp_flight_ideas.py --anywhere -n 5            # somewhere random on earth
+python xp_flight_ideas.py --wonders-near KBJC        # what's worth seeing near you
 ```
 
 ## What's in the box
@@ -72,7 +78,8 @@ python xp_flight_ideas.py --live-weather ts          # fly into a real thunderst
 | `xp_scenery.py` | which add-on scenery you have installed |
 | `xp_perf.py` | density altitude, runway lengths, fuel, weight |
 | `xp_wx.py` | live weather from aviationweather.gov |
-| `xp_scenic.py` | the worldwide scenic database |
+| `xp_scenic.py` | the worldwide scenic database and the random generator |
+| `xp_wonders.py` | 429 natural wonders and landmarks, with positions and heights |
 | `xp_radio.py` | ATIS, radio calls, your own landing spots |
 | `xp_images.py` | maps, airport diagrams, sky pictures, photos |
 | `xp_score.py` | landing scoring and the logbook |

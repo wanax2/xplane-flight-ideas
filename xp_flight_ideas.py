@@ -39,7 +39,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from xp_wx import CONTINENTS, in_area   # noqa: E402  (lat/lon boxes for continents)
 
-VERSION = "6.0"
+VERSION = "6.1"
 CACHE_DIR = Path.home() / ".xp_flight_ideas"
 CACHE_FORMAT = 8
 
@@ -2321,7 +2321,10 @@ def fmt_idea(i, idea, ac, reveal, W=76):
                 extra.append("ILS " + ",".join(a["ils"]))
             loc = ", ".join(x for x in (a.get("city"), a.get("state")) if x)
             L.append(f" {tag:<8} {a['id']}  {a['name']} ({a['elev']:,} ft){'  - ' + loc if loc else ''}")
-            L.append(f"          {rwy_list(a)}{'  [' + ', '.join(extra) + ']' if extra else ''}")
+            if a.get("wonder"):
+                L.append(f"          {a.get('notes') or 'A position, not an airport - fly over it.'}")
+            else:
+                L.append(f"          {rwy_list(a)}{'  [' + ', '.join(extra) + ']' if extra else ''}")
             if j < len(s) - 1:
                 b = s[j + 1]
                 dd = d(a, b)
@@ -2400,8 +2403,13 @@ def main():
     p.add_argument("--scenic-world", dest="scenic_world", nargs="?", const="all", metavar="TAGS",
                    help="separate generator: scenic flights anywhere in the world. Optional TAGS, comma-separated: "
                         "mountains,islands,coast,ice,desert,volcano,water,landmark")
-    p.add_argument("--scenic-source", default="both", choices=["both", "famous", "gems"],
-                   help="with --scenic-world: famous places, hidden gems from your scenery, or both")
+    p.add_argument("--scenic-source", default="all", metavar="SRC",
+                   help="with --scenic-world, comma-separated: famous, wonders, gems, random, all "
+                        "(default all but random)")
+    p.add_argument("--anywhere", action="store_true",
+                   help="throw a dart at the planet: random places anywhere in your scenery")
+    p.add_argument("--wonders-near", dest="wonders_near", metavar="ICAO",
+                   help="list the natural wonders nearest this airport and stop")
     p.add_argument("--no-private", dest="include_private", action="store_false", help="skip private strips")
     p.add_argument("--live-weather", dest="wx_kind", nargs="?", const="any", metavar="KIND",
                    help="add real-weather missions (downloads current METARs). KIND: any, ifr, wind, ts, snow, rain")
@@ -2443,13 +2451,38 @@ def main():
 
     airports = load_airports(root, args.rebuild_cache)
     seed = args.seed if args.seed is not None else random.randrange(1_000_000)
-    if args.scenic_world:
+    if args.wonders_near:
         import xp_scenic
-        tags = None if args.scenic_world == "all" else [t.strip() for t in args.scenic_world.split(",")]
+        import xp_wonders
         finder = xp_scenic.ScenicFinder(sys.modules[__name__], airports, ac, random.Random(seed),
                                         args.include_private)
-        ideas = finder.surprise(args.count, tags, args.continent or "Whole world",
-                                args.scenic_source != "gems", args.scenic_source != "famous")
+        ref = finder.by_id.get(args.wonders_near.strip().upper())
+        if not ref:
+            sys.exit(f"Airport '{args.wonders_near}' not found in your X-Plane data.")
+        reach = {c["title"]: c for c in finder.wonders()}
+        rows = sorted(((xp_wonders.nm(ref["lat"], ref["lon"], w["lat"], w["lon"]), w)
+                       for w in xp_wonders.ALL), key=lambda x: x[0])
+        print(f"Natural wonders nearest {ref['id']} {ref['name']}"
+              f"   ({len(reach)} of {len(xp_wonders.ALL)} reachable in your scenery)\n")
+        for d, w in rows[:args.count if args.count > 5 else 25]:
+            mark = " " if w["name"] in reach else "*"
+            print(f"{d:7,.0f} nm {mark} {w['name'][:28]:28s} {w['text']}")
+        print("\n* = no usable runway near it in your scenery.")
+        return
+    if args.scenic_world or args.anywhere:
+        import xp_scenic
+        tags = (None if not args.scenic_world or args.scenic_world == "all"
+                else [t.strip() for t in args.scenic_world.split(",")])
+        src = {t.strip() for t in (args.scenic_source or "all").split(",")}
+        allsrc = "all" in src
+        finder = xp_scenic.ScenicFinder(sys.modules[__name__], airports, ac, random.Random(seed),
+                                        args.include_private)
+        if args.anywhere:
+            ideas = finder.random_world(args.count, args.continent or "Whole world", tags)
+        else:
+            ideas = finder.surprise(args.count, tags, args.continent or "Whole world",
+                                    allsrc or "famous" in src, allsrc or "gems" in src,
+                                    allsrc or "wonders" in src, "random" in src)
         if not ideas:
             sys.exit("No scenic flights found with those settings.")
         print(f"Scenic flights anywhere in the world  (seed {seed})")
