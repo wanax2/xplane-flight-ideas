@@ -25,6 +25,8 @@ Python + Tkinter, no build step, no account, works offline.
 
 **Sets up the flight in X-Plane.** Through X-Plane 12.4's Web API: aircraft and livery, start on a runway / at a gate / on final / in the air, date and time, weather (mission, real-world, preset, or leave it alone), payload and fuel. The route goes into the GPS through a small companion plugin.
 
+**Drops you straight onto final, over and over.** Type an airport, and it picks the runway (the instrument one, or the one with the headwind), reads the localizer frequency out of your scenery, and tells you what you're about to be dropped into: the height you'll appear at, the descent rate and speed to hold, the wind on the runway, the usual minimums, and whether you'll actually see the runway in that weather. Press it again after every go-around.
+
 **Does the numbers.** Density altitude, the best runway for the wind with head and crosswind components, takeoff and landing distances against the runway you actually have, fuel with reserves against tank capacity, and weight against MTOW. Calibrated against a Cessna 172's published figures — within a few percent from sea level to 8,000 ft — but explicitly rules of thumb, not a flight manual.
 
 **Finds real weather to fly into.** Every current METAR worldwide from aviationweather.gov, ranked by how nasty it is: thunderstorms, snow and freezing rain, strong or gusty wind, fog, low ceilings, low visibility, dust and smoke. Pick a row and it builds a flight into it — or out of it.
@@ -78,6 +80,7 @@ python xp_flight_ideas.py --wonders-near KBJC        # what's worth seeing near 
 | `xp_link.py` | talks to X-Plane's Web API |
 | `xp_scenery.py` | which add-on scenery you have installed |
 | `xp_perf.py` | density altitude, runway lengths, fuel, weight |
+| `xp_approach.py` | approach geometry, runway choice, minimums |
 | `xp_wx.py` | live weather from aviationweather.gov |
 | `xp_scenic.py` | the worldwide scenic database and the random generator |
 | `xp_wonders.py` | 429 natural wonders and landmarks, with positions and heights |

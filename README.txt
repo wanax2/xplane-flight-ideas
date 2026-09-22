@@ -1,4 +1,4 @@
-X-PLANE FLIGHT IDEAS  v6.2
+X-PLANE FLIGHT IDEAS  v6.3
 ========================
 
 Files
@@ -21,6 +21,7 @@ Files
   xp_theme.py               the look of the app (light and dark)
   xp_scenery.py             which add-on scenery you have installed
   xp_perf.py                density altitude, runway lengths, fuel, weight
+  xp_approach.py            approach geometry, runway choice, minimums
   xp_radio.py               ATIS, radio calls, and your own landing spots
   xp_web.py                 the briefing for your phone, and backups
   xp_qr.py                  the QR code shown for the phone briefing
@@ -220,6 +221,33 @@ tick "Add Python to PATH" during install). Nothing else to install.
    the pack. "My scenery..." lists every pack, and has a "Never flown there" tab
    that finds the add-on airports your logbook has never visited - the ones you
    installed and forgot about.
+
+   APPROACH PRACTICE  ("Approach practice..." on Fly it > Set it up)   (v6.3)
+   Puts you on final anywhere, as many times as you like. No route, no idea, no
+   flight plan - type an airport code and press the button.
+   - It picks the runway for you: the instrument runway first, then the one with
+     the best headwind, and it says in one line why. Untick "prefer the
+     instrument runway" if you'd rather just have the wind.
+   - The runway list shows length, the ILS frequency where your scenery has one,
+     and the head and crosswind components on each end.
+   - Distance: anything from 1 to 20 nm, with four shortcuts - Short final (2),
+     4 nm, Glideslope (6) and Intercept (10).
+   - Weather: leave X-Plane's alone, a clear day, 800 ft and 3 miles, right at
+     minimums (200 ft and half a mile), or real weather.
+   - Before you press anything it tells you what you're being dropped into: the
+     height you'll appear at and what the altimeter will read, the rate of
+     descent and speed to hold, time to the threshold, the wind on the runway,
+     the localizer frequency and course, the usual minimums for that kind of
+     approach, whether the runway is long enough for your aeroplane, and whether
+     you will actually see the runway in that weather.
+   - Leave the window open. "Put me on final" works over and over, so you can
+     fly the same approach ten times in a row.
+   - "Back to final" on Fly it > In flight repeats the last approach exactly -
+     handy after a go-around or a landing you'd rather forget.
+   Heights assume a 3-degree path and 50 ft over the threshold. The minimums are
+   the usual ones for the kind of approach, NOT the numbers off the real chart -
+   if you're flying a published procedure, use the plate.
+
 
    THE NUMBERS  (Briefing tab > "Numbers")   (v6.0)
    For the departure and the destination:
@@ -519,6 +547,19 @@ WHERE THE ONLINE DATA COMES FROM
    opentopodata.org             terrain elevations
    All of them are optional. The app works with no internet at all - it just
    uses your own X-Plane scenery instead.
+
+
+WHAT'S NEW IN 6.3
+   - Approach practice: put the aeroplane on final at any airport, at any
+     distance, in any weather, over and over. It picks the runway, reads the ILS
+     frequency out of your scenery, and tells you the height, the descent rate
+     and whether you'll see the runway before you press go. "Back to final"
+     repeats the last one after a go-around.
+   - The app now reads the localizer frequency and course out of earth_nav.dat,
+     not just which runways have one. That means a one-time rescan of your
+     scenery the first time you run this version.
+   - Fixed: the scenery scan read a setting from a background thread, which
+     could make it fail with "main thread is not in main loop".
 
 
 WHAT'S NEW IN 6.2

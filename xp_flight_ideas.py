@@ -39,9 +39,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from xp_wx import CONTINENTS, in_area   # noqa: E402  (lat/lon boxes for continents)
 
-VERSION = "6.2"
+VERSION = "6.3"
 CACHE_DIR = Path.home() / ".xp_flight_ideas"
-CACHE_FORMAT = 8
+CACHE_FORMAT = 9
 
 # --------------------------------------------------------------------------
 # Aircraft profiles - edit or add your own.
@@ -760,14 +760,32 @@ def parse_navaids(path: Path):
 
 
 def parse_ils(path: Path, out: dict):
+    """out[icao][runway_end] = {freq, crs, ident, name} for every localizer.
+
+    Row 4 in earth_nav.dat is a localizer:
+      4  lat lon elev freq*100 range true_course ident icao region runway name...
+    """
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         for line in f:
             code, _, rest = line.partition(" ")
             if code != "4":
                 continue
             t = rest.split()
-            if len(t) >= 10:
-                out.setdefault(t[7], set()).add(t[9])
+            if len(t) < 10:
+                continue
+            icao, rwy = t[7], t[9]
+            d = {"ident": t[6]}
+            try:
+                d["freq"] = int(t[3]) / 100.0
+            except ValueError:
+                pass
+            try:
+                d["crs"] = float(t[5])
+            except ValueError:
+                pass
+            if len(t) > 10:
+                d["name"] = " ".join(t[10:])
+            out.setdefault(icao, {})[rwy] = d
 
 
 def scenery_order(root: Path):
@@ -848,7 +866,10 @@ def load_airports(root: Path, rebuild=False, log=None) -> list:
         parse_ils(nav, ils)
     airports = list(out.values())
     for a in airports:
-        a["ils"] = sorted(ils.get(a["id"], ()))
+        info = ils.get(a["id"]) or {}
+        a["ils"] = sorted(info)
+        if info:
+            a["ils_info"] = info
     navaids = parse_navaids(nav) if nav else []
     with gzip.open(cache, "wt", encoding="utf-8") as f:
         json.dump({"format": CACHE_FORMAT, "key": key, "airports": airports, "navaids": navaids}, f)

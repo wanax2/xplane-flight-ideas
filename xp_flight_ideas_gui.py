@@ -47,6 +47,7 @@ import xp_web                          # noqa: E402
 import xp_qr                           # noqa: E402
 import xp_scenic as scenic              # noqa: E402
 import xp_wonders as wonders            # noqa: E402
+import xp_approach                     # noqa: E402
 import xp_acf                           # noqa: E402
 import xp_score                         # noqa: E402
 import xp_export as exp                 # noqa: E402
@@ -897,6 +898,8 @@ class App(tk.Tk):
         ttk.Label(g, text="nm  rwy").grid(row=3, column=2, sticky="w")
         self.cb_frwy = ttk.Combobox(g, textvariable=self.v_frwy, width=6, state="readonly")
         self.cb_frwy.grid(row=3, column=3, sticky="w")
+        ttk.Button(g, text="Approach practice...", style="Quiet.TButton",
+                   command=lambda: self.approach_window()).grid(row=3, column=4, sticky="e", padx=(8, 0))
         ttk.Radiobutton(g, text="In the air, % of leg 1", value="air", variable=self.v_start).grid(row=4, column=0, sticky="w")
         ttk.Spinbox(g, textvariable=self.v_airpct, from_=5, to=95, increment=5, width=4).grid(row=4, column=1, sticky="w")
         ttk.Label(g, text="ft MSL").grid(row=4, column=2, sticky="w")
@@ -1470,9 +1473,11 @@ class App(tk.Tk):
             self.update_scenery_label()
             return
 
+        root, aps = self.root(), self.airports        # read Tk vars on the main thread only
+
         def work():
             try:
-                sc.scan(self.root(), self.airports, log=(lambda m: None) if quiet else self.log)
+                sc.scan(root, aps, log=(lambda m: None) if quiet else self.log)
                 self.ui(lambda: (self.update_scenery_label(),
                                  None if quiet else self.log("Scenery scan: " + sc.summary_line())))
             except Exception as e:
@@ -1558,6 +1563,263 @@ class App(tk.Tk):
             self.open_picker()
         ttk.Button(t2, text="Show me one of these airports", style="Big.TButton",
                    command=fly_it).pack(anchor="e", pady=(6, 0))
+
+    # ======================================================================
+    # Approach practice
+    # ======================================================================
+    APPR_WX = [("leave", "Leave X-Plane's weather alone"),
+               ("clear", "Clear day - just the landing"),
+               ("low", "Low: 800 ft overcast, 3 SM"),
+               ("mins", "Right at minimums - 200 ft and half a mile"),
+               ("real", "Real weather where I'm flying")]
+
+    def approach_wx(self, key=None):
+        """The weather an approach will be flown in, as a Wx we can also describe."""
+        key = key or (self.v_apwx.get() if hasattr(self, "v_apwx") else "clear")
+        if key == "mins":
+            return core.Wx(sky="vv2", wind_dir=0, wind_spd=4)
+        if key == "low":
+            return core.Wx(sky="ovc8", wind_dir=0, wind_spd=8)
+        if key in ("leave", "real") and self.idea:
+            return self.cur_wx()
+        return core.Wx(sky="clear", wind_dir=0, wind_spd=0)
+
+    def approach_window(self, ident=None):
+        """Put the aeroplane on final anywhere, over and over, without a flight plan."""
+        if not self.airports:
+            messagebox.showinfo("Approach", "Airports are still loading - give it a moment.")
+            return
+        start = ident or (self.idea.main_dest()["id"] if self.idea else None) \
+            or (self._home_ref() or {}).get("id", "")
+        win = tk.Toplevel(self)
+        win.title("Set up an approach")
+        win.geometry(f"{self.theme.px(740)}x{self.theme.px(600)}")
+        win.transient(self)
+        self.theme.track(win, "window")
+        head = ttk.Frame(win, style="Bg.TFrame", padding=(12, 10, 12, 4))
+        head.pack(fill="x")
+        ttk.Label(head, text="Set up an approach", style="Head.TLabel").pack(side="left")
+        ttk.Label(head, text="   straight onto final, as many times as you like",
+                  style="MutedBg.TLabel").pack(side="left")
+        body = ttk.Frame(win, padding=(12, 8))
+        body.pack(fill="both", expand=True)
+
+        self.v_apid = tk.StringVar(value=start or "")
+        self.v_aprwy = tk.StringVar()
+        self.v_apnm = tk.StringVar(value=str(self.cfg.get("appr_nm", 6)))
+        _k = self.cfg.get("appr_wx", "clear")
+        self.v_apwx = tk.StringVar(value=next((t for k, t in self.APPR_WX if k == _k),
+                                              self.APPR_WX[1][1]))
+        self.v_apils = tk.BooleanVar(value=self.cfg.get("appr_ils", True))
+
+        g = ttk.LabelFrame(body, text="Where", padding=(10, 8))
+        g.pack(fill="x")
+        ttk.Label(g, text="Airport:").grid(row=0, column=0, sticky="w")
+        e = ttk.Entry(g, textvariable=self.v_apid, width=9)
+        e.grid(row=0, column=1, sticky="w", padx=(4, 8))
+        self.l_apname = ttk.Label(g, text="", style="Muted.TLabel")
+        self.l_apname.grid(row=0, column=2, columnspan=3, sticky="w")
+        ttk.Label(g, text="Runway:").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        self.cb_aprwy = ttk.Combobox(g, textvariable=self.v_aprwy, state="readonly", width=42)
+        self.cb_aprwy.grid(row=1, column=1, columnspan=3, sticky="w", padx=(4, 8), pady=(6, 0))
+        ttk.Checkbutton(g, text="prefer the instrument runway", variable=self.v_apils).grid(
+            row=1, column=4, sticky="w", pady=(6, 0))
+        self.l_apwhy = ttk.Label(g, text="", style="Muted.TLabel", wraplength=self.theme.px(620),
+                                 justify="left")
+        self.l_apwhy.grid(row=2, column=0, columnspan=5, sticky="w", pady=(6, 0))
+        g.columnconfigure(3, weight=1)
+
+        g = ttk.LabelFrame(body, text="How far out", padding=(10, 8))
+        g.pack(fill="x", pady=8)
+        ttk.Spinbox(g, textvariable=self.v_apnm, from_=1, to=20, width=4).pack(side="left")
+        ttk.Label(g, text="nm").pack(side="left", padx=(2, 10))
+        for nm, lbl in ((2, "Short final"), (4, "4 nm"), (6, "Glideslope"), (10, "Intercept")):
+            ttk.Button(g, text=lbl, style="Quiet.TButton",
+                       command=lambda n=nm: self.v_apnm.set(str(n))).pack(side="left", padx=2)
+        ttk.Label(g, text="   Weather:").pack(side="left")
+        ttk.Combobox(g, textvariable=self.v_apwx, state="readonly", width=34,
+                     values=[t for _, t in self.APPR_WX]).pack(side="left", padx=4)
+
+        self.ap_txt = ScrolledText(win, wrap="word", height=9, font=MONO)
+        self.theme.track(self.ap_txt, "text")
+        self.ap_txt.pack(fill="both", expand=True, padx=12)
+        self.ap_txt.config(state="disabled")
+
+        foot = ttk.Frame(win, style="Bg.TFrame", padding=(12, 8, 12, 12))
+        foot.pack(fill="x")
+        ttk.Button(foot, text="Put me on final  ››", style="Big.TButton",
+                   command=self.approach_go).pack(side="left")
+        ttk.Label(foot, text="  Leave this window open - press it again after a go-around.",
+                  style="MutedBg.TLabel").pack(side="left")
+        ttk.Button(foot, text="Close", style="Quiet.TButton",
+                   command=lambda: (self.save_cfg(), self.theme.forget(win), win.destroy())).pack(side="right")
+
+        # keep the runway list and the briefing in step with the boxes
+        self._ap_opts = []
+
+        def refresh(*_a):
+            if not win.winfo_exists():
+                return
+            a = next((x for x in self.airports if x["id"].upper() == self.v_apid.get().strip().upper()), None)
+            if not a:
+                self.l_apname.config(text="not found in your scenery")
+                self.cb_aprwy["values"] = []
+                self._ap_opts = []
+                self.set_text(self.ap_txt, "Type an airport code that exists in your X-Plane scenery.")
+                return
+            where = ", ".join(x for x in (a.get("city"), a.get("state"), a.get("country") or a.get("iso")) if x)
+            self.l_apname.config(text=f"{a['name']}  -  {a['elev']:,} ft" + (f"  -  {where}" if where else ""))
+            wx = self.approach_wx(self.ap_wx_key())
+            opts = xp_approach.runway_options(a, wx, core)
+            if not self.v_apils.get():
+                opts = sorted(opts, key=lambda o: (-o["head"], -o["len"]))
+            self._ap_opts = opts
+            labels = []
+            for o in opts:
+                bits = [f"{o['end']:<3}", f"{o['len']:>6,} ft"]
+                if o["ils"]:
+                    bits.append("ILS" + (f" {o['freq']:.2f}" if o.get("freq") else ""))
+                bits.append(f"{o['head']:+.0f} kt head" if abs(o["head"]) >= 1 else "calm")
+                if o["cross"] >= 5:
+                    bits.append(f"{o['cross']:.0f} across")
+                labels.append("   ".join(bits))
+            self.cb_aprwy["values"] = labels
+            if self.v_aprwy.get() not in labels:
+                self.v_aprwy.set(labels[0] if labels else "")
+            best, why = xp_approach.pick_runway(a, wx, core, self.v_apils.get())
+            self.l_apwhy.config(text=why)
+            self.draw_approach(a, wx)
+        self._ap_refresh = refresh
+        for v in (self.v_apid, self.v_aprwy, self.v_apnm, self.v_apwx, self.v_apils):
+            v.trace_add("write", lambda *a: self.debounce("appr", refresh, 200))
+        e.bind("<Return>", lambda ev: refresh())
+        refresh()
+
+    def set_text(self, widget, text):
+        """Replace the contents of a read-only text box."""
+        widget.config(state="normal")
+        widget.delete("1.0", "end")
+        widget.insert("1.0", text)
+        widget.config(state="disabled")
+
+    def ap_wx_key(self):
+        txt = self.v_apwx.get()
+        return next((k for k, t in self.APPR_WX if t == txt), "clear")
+
+    def ap_choice(self):
+        """(airport, runway option) currently selected in the approach window."""
+        a = next((x for x in self.airports if x["id"].upper() == self.v_apid.get().strip().upper()), None)
+        if not a or not self._ap_opts:
+            return None, None
+        i = list(self.cb_aprwy["values"]).index(self.v_aprwy.get()) if \
+            self.v_aprwy.get() in self.cb_aprwy["values"] else 0
+        return a, self._ap_opts[i]
+
+    def draw_approach(self, a, wx):
+        opt = self.ap_choice()[1]
+        nm = self.num(self.v_apnm, 6)
+        ac = self.ac()
+        perf = None
+        if opt:
+            try:
+                chk = xp_perf.runway_check(ac, a, opt["len"], a["elev"], wx.temp, wx.altimeter,
+                                           1.0, opt["head"], opt["surface"])
+                perf = (f"Landing needs about {chk['landing']['over50']:,.0f} ft over a 50 ft obstacle "
+                        f"and you have {chk['have']:,} ft - {chk['verdict']} ({chk['why']}).")
+            except Exception:
+                perf = None
+        lines = xp_approach.brief(a, opt, nm, ac, wx, core, perf)
+        lines.append("")
+        lines.append(xp_approach.intercept_hint(nm))
+        lines.append("")
+        lines.append("Heights are for a 3-degree path, 50 ft over the threshold. The minimums are the "
+                     "usual ones for that kind of approach, not the numbers off the real chart.")
+        self.set_text(self.ap_txt, "\n".join(lines))
+
+    def approach_go(self):
+        a, opt = self.ap_choice()
+        if not a or not opt:
+            messagebox.showinfo("Approach", "Pick an airport and a runway first.")
+            return
+        acf = self.selected_acf()
+        if not acf:
+            messagebox.showinfo("Approach", "Choose an aircraft on the left first.")
+            return
+        nm = max(1.0, self.num(self.v_apnm, 6))
+        key = self.ap_wx_key()
+        if key == "leave":
+            weather = None
+        elif key == "real":
+            weather = "use_real_weather"
+        else:
+            wx = self.approach_wx(key)
+            weather = wx.to_xplane(a["lat"], a["lon"], a["elev"])
+        lv = self.v_livery.get()
+        flight = link.build_flight(acf, None if lv == "(default)" else lv,
+                                   link.runway_start(a["id"], opt["end"], nm),
+                                   None, weather, True, system_time=False)
+        core.save_config(appr_nm=int(nm), appr_wx=key, appr_ils=self.v_apils.get(),
+                         appr_last=[a["id"], opt["end"], nm, key])
+        (core.CACHE_DIR / "last_flight.json").write_text(json.dumps({"data": flight}, indent=2))
+        self._appr_last = (a["id"], opt["end"], nm, key)
+        api = self.api()
+        label = f"{a['id']} runway {opt['end']}, {nm:g} nm final"
+
+        def work():
+            ok, msg = api.check()
+            if not ok:
+                self.log(msg)
+                self.ui(lambda: messagebox.showerror("X-Plane", msg))
+                return
+            try:
+                api.start_flight(flight)
+            except link.XPlaneError as e:
+                m = str(e)
+                self.log(f"Approach setup failed: {m}")
+                self.ui(lambda: messagebox.showerror("Approach", m))
+                return
+            self.log(f"On final: {label}")
+            self.ui(lambda: self.v_status.set(f"On final at {label} - press it again for another go."))
+        threading.Thread(target=work, daemon=True).start()
+
+    def approach_again(self):
+        """Back onto final, same as last time. For after a go-around or a bad one."""
+        last = getattr(self, "_appr_last", None) or self.cfg.get("appr_last")
+        if not last:
+            self.approach_window()
+            return
+        ident, end, nm, key = last[0], last[1], float(last[2]), last[3]
+        a = next((x for x in self.airports if x["id"].upper() == str(ident).upper()), None)
+        if not a:
+            self.approach_window()
+            return
+        acf = self.selected_acf()
+        if not acf:
+            messagebox.showinfo("Approach", "Choose an aircraft on the left first.")
+            return
+        if key == "leave":
+            weather = None
+        elif key == "real":
+            weather = "use_real_weather"
+        else:
+            weather = self.approach_wx(key).to_xplane(a["lat"], a["lon"], a["elev"])
+        lv = self.v_livery.get()
+        flight = link.build_flight(acf, None if lv == "(default)" else lv,
+                                   link.runway_start(a["id"], end, nm), None, weather, True,
+                                   system_time=False)
+        api = self.api()
+
+        def work():
+            ok, msg = api.check()
+            if not ok:
+                self.log(msg)
+                return
+            try:
+                api.start_flight(flight)
+                self.log(f"Back on final: {ident} runway {end}, {nm:g} nm.")
+            except link.XPlaneError as e:
+                self.log(f"Couldn't reset to final: {e}")
+        threading.Thread(target=work, daemon=True).start()
 
     # ======================================================================
     # Settings
@@ -3918,6 +4180,8 @@ class App(tk.Tk):
         ttk.Label(top, textvariable=self.v_livehdr, style="Head.TLabel").pack(side="left")
         ttk.Button(top, text="Kneeboard", command=self.toggle_kneeboard).pack(side="right")
         ttk.Button(top, text="Read briefing aloud", command=self.read_aloud).pack(side="right", padx=4)
+        ttk.Button(top, text="Back to final", style="Quiet.TButton",
+                   command=self.approach_again).pack(side="right", padx=4)
         self.live_cv = tk.Canvas(f, height=self.theme.px(380), background="#e9eef1")
         self.theme.track(self.live_cv, "canvas")
         self.live_cv.pack(fill="both", expand=True, pady=4)
@@ -4132,6 +4396,10 @@ class App(tk.Tk):
         m.add_command(label="Read the briefing aloud", command=self.read_aloud)
         m.add_command(label="Open the kneeboard", command=self.toggle_kneeboard)
         m.add_separator()
+        m.add_command(label="Practise the approach into " +
+                            (self.idea.main_dest()["id"] if self.idea else "an airport") + "...",
+                      command=lambda: self.approach_window(
+                          self.idea.main_dest()["id"] if self.idea else None))
         m.add_command(label="Turn this into a multi-leg trip", command=self.trip_from_idea)
         m.add_command(label="Approach plates and charts", command=self.charts_menu)
         m.add_separator()
