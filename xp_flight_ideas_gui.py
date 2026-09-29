@@ -52,6 +52,7 @@ import xp_hazard                       # noqa: E402
 import xp_avionics                     # noqa: E402
 import xp_coach                        # noqa: E402
 import xp_checkride                    # noqa: E402
+import xp_history                      # noqa: E402
 import xp_fleet                        # noqa: E402
 import xp_acf                           # noqa: E402
 import xp_score                         # noqa: E402
@@ -718,6 +719,10 @@ class App(tk.Tk):
         wxg.add(thaz, text="Fly into it")
         self._build_wxfly(thaz)
         self.tab_wxfly = self._home_of(thaz, nb, wxg)
+        tpast = ttk.Frame(wxg, padding=6)
+        wxg.add(tpast, text="A day in the past")
+        self._build_wxpast(tpast)
+        self.tab_wxpast = self._home_of(tpast, nb, wxg)
 
         # --- Explore: where else could I go? ---
         exp = self._group(nb, "Explore")
@@ -984,8 +989,13 @@ class App(tk.Tk):
         rb.grid(row=2, column=0, columnspan=4, sticky="w")
         Tooltip(rb, "Today's date, and the clock time it is right now at the departure airport's "
                     "longitude - so the sun is where it really is over there.")
+        self.v_histlabel = tk.StringVar(value="The date and time of a day from the past")
+        rh = ttk.Radiobutton(g, textvariable=self.v_histlabel, value="hist", variable=self.v_timemode)
+        rh.grid(row=3, column=0, columnspan=4, sticky="w")
+        Tooltip(rh, "Filled in by Weather > A day in the past. Flies the actual date, so the sun "
+                    "and the season are the ones that went with that weather.")
         self.l_there = ttk.Label(g, text="", style="Muted.TLabel")
-        self.l_there.grid(row=3, column=0, columnspan=4, sticky="w")
+        self.l_there.grid(row=4, column=0, columnspan=4, sticky="w")
         self.v_timemode.trace_add("write", lambda *a: self.update_there_label())
 
         # weather
@@ -1255,6 +1265,7 @@ class App(tk.Tk):
             sc_famous=self.v_scfam.get(), sc_gems=self.v_scgem.get(), sc_area=self.v_scarea.get(),
             sc_wonders=self.v_scwon.get(), sc_random=self.v_scrnd.get(),
             continue_here=self.v_continue.get(), ck_std=self.ck_std(),
+            **self._hist_cfg(),
             sc_tags=[k for k, v in self.v_sctags.items() if v.get()], sc_n=int(self.num(self.v_scn, 12)),
             insim=self.v_insim.get(), speak=self.v_speak.get(), knee=self.v_knee.get(),
             surprise=self.v_surprise.get(), sur_lo=self.num(self.v_sur_lo, 10), sur_hi=self.num(self.v_sur_hi, 40),
@@ -1811,6 +1822,19 @@ class App(tk.Tk):
             self._rides = xp_checkride.Rides(core.CACHE_DIR / "checkrides.json")
         return self._rides
 
+    def _hist_cfg(self):
+        """What the 'day in the past' boxes should remember - empty until that tab exists."""
+        if not hasattr(self, "v_hid"):
+            return {}
+        try:
+            return {"hist_id": self.v_hid.get(), "hist_lat": self.v_hlat.get(),
+                    "hist_lon": self.v_hlon.get(), "hist_day": int(self.num(self.v_hday, 1)),
+                    "hist_mon": core.MONTHS.index(self.v_hmon.get()) + 1,
+                    "hist_year": int(self.num(self.v_hyear, 2024)),
+                    "hist_settime": self.v_hsettime.get()}
+        except (ValueError, IndexError):
+            return {}
+
     def ck_std(self):
         v = getattr(self, "v_ckstd", None)
         return self.CK_STD_NAMES.get(v.get(), "private") if v is not None else "private"
@@ -2150,9 +2174,12 @@ class App(tk.Tk):
         if enable:
             self.v_layers_on.set(True)
 
-    def wx_from_hazard(self, key):
-        """Pour one of the hazard scenarios into the boxes."""
-        w = xp_hazard.build(key, core, random.Random())
+    def wx_into_boxes(self, w, said=""):
+        """Pour any weather object into the workshop boxes and show it.
+
+        One path for all of them - the hazard scenarios, a live METAR, an hour
+        out of the archive - so they all behave the same once they land here.
+        """
         self.v_wxmode.set("mission")
         self.sky_names = {w.sky_text: "metar", **{v[0]: k for k, v in core.SKY.items()}} \
             if w.custom else {v[0]: k for k, v in core.SKY.items()}
@@ -2174,8 +2201,14 @@ class App(tk.Tk):
             self.v_shear[i].set(str(sh))
         self.v_layers_on.set(False)
         self.wx_layers_from_sky(enable=False)
-        self.log(f"Weather set to: {xp_hazard.HAZARDS[key]['name']}.")
+        if said:
+            self.log(said)
         self.draw_wxshop()
+
+    def wx_from_hazard(self, key):
+        """Pour one of the hazard scenarios into the boxes."""
+        self.wx_into_boxes(xp_hazard.build(key, core, random.Random()),
+                           f"Weather set to: {xp_hazard.HAZARDS[key]['name']}.")
 
     def wx_layers(self):
         """The hand-built cloud layers, or None when the tick box is off."""
@@ -2360,6 +2393,440 @@ class App(tk.Tk):
         for i in range(3):
             self.v_turb[i].set(min(self.TURB_VALUE, key=lambda kk: abs(self.TURB_VALUE[kk] - t[i])))
             self.v_shear[i].set(str(sh[i]))
+
+
+    # ======================================================================
+    # A day in the past
+    # ======================================================================
+    def days(self):
+        if not hasattr(self, "_days"):
+            self._days = xp_history.Days(core.CACHE_DIR / "saved_days.json")
+        return self._days
+
+    def _build_wxpast(self, f):
+        c = core.load_config()
+        head = ttk.Frame(f)
+        head.pack(fill="x")
+        ttk.Label(head, text="The weather on a particular day", style="Head.TLabel").pack(side="left")
+        ttk.Button(head, text="Days worth flying \u25be", style="Quiet.TButton",
+                   command=self.famous_menu).pack(side="right")
+        ttk.Label(f, text="A date, a place, and the hour you want. Real METARs where a station "
+                          "reported one; a worldwide reanalysis everywhere else.",
+                  style="Muted.TLabel").pack(anchor="w", pady=(0, 6))
+
+        g = ttk.Frame(f)
+        g.pack(fill="x")
+        ttk.Label(g, text="Airport:").grid(row=0, column=0, sticky="w")
+        self.v_hid = tk.StringVar(value=c.get("hist_id", ""))
+        e = ttk.Entry(g, textvariable=self.v_hid, width=8)
+        e.grid(row=0, column=1, sticky="w", padx=(2, 2))
+        e.bind("<Return>", lambda ev: self.hist_fetch())
+        ttk.Button(g, text="From the flight", style="Quiet.TButton",
+                   command=self.hist_from_flight).grid(row=0, column=2, padx=(0, 10))
+        ttk.Label(g, text="or lat/lon:").grid(row=0, column=3, sticky="e")
+        self.v_hlat = tk.StringVar(value=c.get("hist_lat", ""))
+        self.v_hlon = tk.StringVar(value=c.get("hist_lon", ""))
+        ttk.Entry(g, textvariable=self.v_hlat, width=8).grid(row=0, column=4, padx=2)
+        ttk.Entry(g, textvariable=self.v_hlon, width=8).grid(row=0, column=5, padx=(0, 10))
+
+        today = time.localtime()
+        ttk.Label(g, text="Date:").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        self.v_hday = tk.StringVar(value=str(c.get("hist_day", today.tm_mday)))
+        self.v_hmon = tk.StringVar(value=core.MONTHS[int(c.get("hist_mon", today.tm_mon)) - 1])
+        self.v_hyear = tk.StringVar(value=str(c.get("hist_year", today.tm_year - 1)))
+        dd = ttk.Frame(g)
+        dd.grid(row=1, column=1, columnspan=5, sticky="w", pady=(6, 0))
+        ttk.Spinbox(dd, textvariable=self.v_hday, from_=1, to=31, width=3).pack(side="left")
+        ttk.Combobox(dd, textvariable=self.v_hmon, values=core.MONTHS, width=10,
+                     state="readonly").pack(side="left", padx=3)
+        ttk.Spinbox(dd, textvariable=self.v_hyear, from_=xp_history.EARLIEST, to=today.tm_year,
+                    width=6).pack(side="left")
+        ttk.Button(dd, text="\u2039 day", style="Quiet.TButton",
+                   command=lambda: self.hist_shift(-1)).pack(side="left", padx=(10, 0))
+        ttk.Button(dd, text="day \u203a", style="Quiet.TButton",
+                   command=lambda: self.hist_shift(1)).pack(side="left")
+        ttk.Button(dd, text="Fetch the weather", style="Big.TButton",
+                   command=self.hist_fetch).pack(side="left", padx=(14, 0))
+
+        self.v_hstat = tk.StringVar(value="Nothing fetched yet.")
+        ttk.Label(f, textvariable=self.v_hstat, style="Muted.TLabel",
+                  wraplength=self.theme.px(900), justify="left").pack(anchor="w", pady=(6, 4))
+
+        body = ttk.PanedWindow(f, orient="horizontal")
+        body.pack(fill="both", expand=True)
+        lf = ttk.Frame(body)
+        rf = ttk.Frame(body, padding=(8, 0, 0, 0))
+        body.add(lf, weight=3)
+        body.add(rf, weight=2)
+
+        cols = ("hour", "cat", "what")
+        tv = ttk.Treeview(lf, columns=cols, show="headings", selectmode="browse", height=12)
+        for col, h, w in zip(cols, ("Local", "", "What it was like"), (60, 56, 420)):
+            tv.heading(col, text=h)
+            tv.column(col, width=w, anchor="w", stretch=col == "what")
+        self.theme.fit_columns(tv)
+        sb = ttk.Scrollbar(lf, orient="vertical", command=tv.yview)
+        tv.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        tv.pack(fill="both", expand=True)
+        for cat, colour in livewx.CAT_COLOR.items():
+            tv.tag_configure(cat or "none", foreground=colour)
+        tv.bind("<<TreeviewSelect>>", lambda e: self.hist_detail())
+        tv.bind("<Double-1>", lambda e: self.hist_use())
+        self.tv_hist = tv
+
+        self.hist_txt = ScrolledText(rf, wrap="word", height=12, font=MONO)
+        self.theme.track(self.hist_txt, "text")
+        self.hist_txt.pack(fill="both", expand=True)
+        self.hist_txt.config(state="disabled")
+
+        self.v_hsettime = tk.BooleanVar(value=c.get("hist_settime", True))
+        ttk.Checkbutton(rf, text="Set the sim's date and time to match",
+                        variable=self.v_hsettime).pack(anchor="w", pady=(4, 0))
+
+        sv = ttk.Frame(f)
+        sv.pack(fill="x", pady=(6, 0))
+        ttk.Label(sv, text="Kept days:", style="Muted.TLabel").pack(side="left")
+        self.v_hsaved = tk.StringVar()
+        self.cb_hsaved = ttk.Combobox(sv, textvariable=self.v_hsaved, state="readonly", width=34)
+        self.cb_hsaved.pack(side="left", padx=4)
+        self.cb_hsaved.bind("<<ComboboxSelected>>", lambda e: self.hist_load_saved())
+        ttk.Button(sv, text="Keep this day", style="Quiet.TButton",
+                   command=self.hist_keep).pack(side="left", padx=(6, 0))
+        ttk.Button(sv, text="Forget", style="Quiet.TButton",
+                   command=self.hist_forget).pack(side="left", padx=2)
+
+        b = ttk.Frame(f)
+        b.pack(fill="x", pady=(6, 0))
+        ttk.Button(b, text="Fly this hour", style="Big.TButton",
+                   command=self.hist_use).pack(side="left")
+        ttk.Button(b, text="Build a flight for this day", style="Quiet.TButton",
+                   command=self.hist_flight).pack(side="left", padx=(6, 0))
+        ttk.Button(b, text="Approach into it...", style="Quiet.TButton",
+                   command=self.hist_approach).pack(side="left", padx=(6, 0))
+        ttk.Label(b, text="  Pick an hour first.", style="Muted.TLabel").pack(side="left")
+
+        self.hist_day = None
+        self.fill_saved_days()
+
+    # ---- the boxes --------------------------------------------------------
+    def hist_date(self):
+        """What the three date boxes say, as a date. Raises if they're nonsense."""
+        import datetime as _dt
+        try:
+            return _dt.date(int(self.num(self.v_hyear, 0)), core.MONTHS.index(self.v_hmon.get()) + 1,
+                            int(self.num(self.v_hday, 1)))
+        except (ValueError, IndexError):
+            raise ValueError("That isn't a date - check the day, month and year.")
+
+    def set_hist_date(self, d):
+        self.v_hday.set(str(d.day))
+        self.v_hmon.set(core.MONTHS[d.month - 1])
+        self.v_hyear.set(str(d.year))
+
+    def hist_shift(self, days):
+        import datetime as _dt
+        try:
+            self.set_hist_date(self.hist_date() + _dt.timedelta(days=days))
+        except ValueError as e:
+            messagebox.showinfo("A day in the past", str(e))
+
+    def hist_place(self):
+        """(ident, name, lat, lon) from the airport box, or the lat/lon boxes."""
+        ident = self.v_hid.get().strip().upper()
+        if ident:
+            a = self.gen.find(ident) if self.gen else None
+            if a:
+                return a["id"], a["name"], a["lat"], a["lon"]
+            a = next((x for x in self.airports if x["id"] == ident), None)
+            if a:
+                return a["id"], a["name"], a["lat"], a["lon"]
+        lat, lon = self.v_hlat.get().strip(), self.v_hlon.get().strip()
+        if lat and lon:
+            try:
+                la, lo = float(lat), float(lon)
+            except ValueError:
+                raise ValueError("Those don't look like a latitude and longitude.")
+            if not (-90 <= la <= 90 and -180 <= lo <= 180):
+                raise ValueError("A latitude is -90 to 90 and a longitude is -180 to 180.")
+            return ident, "", la, lo
+        if ident:
+            raise ValueError(f"{ident} isn't in your scenery. Put its latitude and longitude in "
+                             f"instead and it will still work - the archives don't need the airport "
+                             f"to exist, only the place.")
+        raise ValueError("Type an airport, or a latitude and longitude.")
+
+    def hist_from_flight(self):
+        """Fill the place in from wherever the current flight starts."""
+        a = None
+        if self.idea:
+            a = self.route_stops()[0]
+        elif self.gen and self.v_from.get().strip():
+            a = self.gen.find(self.v_from.get().strip().upper())
+        if not a:
+            messagebox.showinfo("A day in the past", "Generate a flight first, or type an airport.")
+            return
+        self.v_hid.set(a["id"])
+        self.v_hlat.set(f"{a['lat']:.4f}")
+        self.v_hlon.set(f"{a['lon']:.4f}")
+
+    # ---- fetching ---------------------------------------------------------
+    def hist_fetch(self):
+        try:
+            ident, name, lat, lon = self.hist_place()
+            date = self.hist_date()
+        except ValueError as e:
+            messagebox.showinfo("A day in the past", str(e))
+            return
+        self.save_cfg()
+        where = ident or f"{lat:.2f}, {lon:.2f}"
+        self.v_hstat.set(f"Looking up {where} on {date.strftime('%d %B %Y')}...")
+        self.tv_hist.delete(*self.tv_hist.get_children())
+        cache = core.CACHE_DIR / "history"
+
+        def work():
+            try:
+                day = xp_history.fetch_day(ident, name, lat, lon, date, cache_dir=cache,
+                                           on_status=lambda s: self.ui(lambda s=s: self.v_hstat.set(s)))
+            except Exception as e:
+                self.ui(lambda e=e: self.hist_failed(str(e)))
+                return
+            self.ui(lambda d=day: self.show_hist_day(d))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def hist_failed(self, msg):
+        self.v_hstat.set(msg)
+        self.set_text(self.hist_txt, msg)
+        self.log("A day in the past: " + msg)
+
+    def show_hist_day(self, day):
+        """Put a fetched day on the screen."""
+        self.hist_day = day
+        self.tv_hist.delete(*self.tv_hist.get_children())
+        best = None
+        for h, cat, bits, raw in day.timeline(livewx):
+            if not bits:
+                continue
+            self.tv_hist.insert("", "end", iid=str(h), tags=(cat or "none",),
+                                values=(f"{h:02d}:00", cat, bits))
+            if best is None:
+                best = str(h)
+        where = day.where()
+        src = ("real METARs filed by the station" if day.source == "asos"
+               else "worldwide reanalysis - modelled, not observed")
+        self.v_hstat.set(f"{day.title()}: {day.summary(livewx)}. Source: {src}."
+                         + (" " + day.note if day.note else ""))
+        self.log(f"A day in the past: {day.title()} - {day.summary(livewx)}")
+        want = getattr(self, "_hist_want_hour", None)
+        self._hist_want_hour = None
+        if want is None:
+            want = self.hist_pref_hour(day)
+        pick = str(want) if self.tv_hist.exists(str(want)) else best
+        if pick:
+            self.tv_hist.selection_set(pick)
+            self.tv_hist.see(pick)
+            self.hist_detail()
+
+    @staticmethod
+    def hist_pref_hour(day):
+        """The hour to land on first: the nastiest one, because that's why you came."""
+        order = {"LIFR": 4, "IFR": 3, "MVFR": 2, "VFR": 1, "": 0}
+        best, score = 12, -1
+        for h, cat, bits, _raw in day.timeline(livewx):
+            if bits and order.get(cat, 0) > score:
+                best, score = h, order.get(cat, 0)
+        return best
+
+    # ---- one hour ---------------------------------------------------------
+    def hist_wx(self, o=None, h=None):
+        """That hour as a weather object, labelled with the day it came from."""
+        o = o if o is not None else self.hist_obs()
+        h = self.hist_hour() if h is None else h
+        f = livewx._finish(dict(o))
+        w = livewx.to_wx(f, core)
+        rest = w.sky_text.split("): ", 1)[-1]
+        day = self.hist_day
+        w._text = (f"{day.where()}, {day.date.strftime('%d %b %Y')} {h:02d}:00 "
+                   f"({f.get('cat') or '?'}): {rest}")
+        return w, f
+
+    def hist_elev(self):
+        a = self.gen.find(self.hist_day.ident) if (self.gen and self.hist_day and self.hist_day.ident) else None
+        return a["elev"] if a else 0
+
+    def hist_hour(self):
+        sel = self.tv_hist.selection()
+        return int(sel[0]) if sel else None
+
+    def hist_obs(self):
+        h = self.hist_hour()
+        return self.hist_day.at_local(h) if (self.hist_day and h is not None) else None
+
+    def hist_detail(self):
+        """Everything known about the selected hour."""
+        o = self.hist_obs()
+        if not o:
+            return
+        day, h = self.hist_day, self.hist_hour()
+        w, f = self.hist_wx(o, h)
+        L = [f"{day.where()}  \u00b7  {day.date.strftime('%A %d %B %Y')}  \u00b7  "
+             f"{h:02d}:00 local ({o.get('when', '?')})", ""]
+        if o.get("raw"):
+            L += [o["raw"], ""]
+        L.append(f"{f.get('cat') or '?'}: {w.describe()}")
+        L.append("")
+        ceil = f"{f['ceiling']:,.0f} ft" if f.get("ceiling") else "none reported"
+        L.append(f"Ceiling      {ceil}")
+        L.append(f"Visibility   {o['vis']:g} SM")
+        L.append(f"Wind         " + ("calm" if not o.get("wspd") else
+                                     f"{o['wdir']:03.0f}\u00b0 at {o['wspd']:.0f} kt"
+                                     + (f", gusting {o['wgst']:.0f}" if o.get("wgst") else "")))
+        if o.get("temp") is not None:
+            dp = f", dew point {o['dewp']:.0f}" if o.get("dewp") is not None else ""
+            L.append(f"Temperature  {o['temp']:.0f}\u00b0C{dp}")
+        L.append(f"Altimeter    {o.get('altim', 29.92):.2f} inHg")
+        if o.get("wx"):
+            L.append(f"Weather      {o['wx']}")
+        L.append("")
+        elev = self.hist_elev()
+        fz = w.freezing_level(elev)
+        if fz <= elev:
+            L.append("It was below freezing at the surface, so anything in cloud is ice.")
+        else:
+            L.append(f"Freezing level about {fz:,.0f} ft, so ice is possible in cloud above that.")
+        if day.estimated:
+            L += ["", "This hour is reanalysis, not an observation. The wind, temperature, pressure "
+                      "and cloud cover come from the model; the cloud base is worked out from the "
+                      "temperature-dew point spread and the visibility is a rule of thumb. Treat it "
+                      "as the right kind of day rather than the exact sky."]
+        self.set_text(self.hist_txt, "\n".join(L))
+
+    def hist_use(self, show=True):
+        """Put this hour's weather - and its date and time - into the flight."""
+        o = self.hist_obs()
+        if not o:
+            messagebox.showinfo("A day in the past", "Pick an hour from the list first.")
+            return
+        day, h = self.hist_day, self.hist_hour()
+        w, _f = self.hist_wx(o, h)
+        self.wx_into_boxes(w, f"Weather set to {day.where()}, {day.date.strftime('%d %B %Y')} "
+                              f"at {h:02d}:00 local.")
+        if self.v_hsettime.get():
+            self._hist_when = (day.day_of_year(), float(h))
+            self.v_histlabel.set(f"The date and time of that weather "
+                                 f"({day.date.strftime('%d %b %Y')}, {h:02d}:00)")
+            self.v_timemode.set("hist")
+        if show:
+            self.goto(self.tab_wxshop)
+
+    def hist_flight(self):
+        """Generate a flight around this place, and give it that day's weather."""
+        if not self.hist_day:
+            messagebox.showinfo("A day in the past", "Fetch a day first.")
+            return
+        o = self.hist_obs()
+        if not o:
+            messagebox.showinfo("A day in the past", "Pick an hour from the list first.")
+            return
+        ident = self.hist_day.ident
+        if ident and self.gen and self.gen.find(ident):
+            self.v_from.set(ident)
+        self.generate()                       # generating picks its own weather...
+        self.hist_use(show=False)             # ...so the archive goes in afterwards
+        self.sync_idea_wx_from_boxes()
+        self.nb.select(0)
+
+    def sync_idea_wx_from_boxes(self):
+        """Give every generated idea the weather that is in the boxes."""
+        if not self.ideas:
+            return
+        try:
+            w = self.cur_wx()
+            for idea in self.ideas:
+                idea.wx = w.copy() if hasattr(w, "copy") else w
+            self.show_brief()
+            self.fill_launch()
+        except Exception as e:
+            self.log(f"A day in the past: {e}")
+
+    def hist_approach(self):
+        """Fly an approach into the weather of that hour."""
+        o = self.hist_obs()
+        if not o:
+            messagebox.showinfo("A day in the past", "Pick an hour from the list first.")
+            return
+        self.hist_use()
+        ident = self.hist_day.ident
+        self.approach_window(ident if (self.gen and ident and self.gen.find(ident)) else None)
+        try:
+            self.v_apwx.set(dict(self.APPR_WX_FIXED)["built"])
+        except Exception:
+            pass
+
+    # ---- keeping days -----------------------------------------------------
+    def fill_saved_days(self):
+        if not hasattr(self, "cb_hsaved"):
+            return
+        D = self.days()
+        names = [D.label(i) for i in range(len(D.items))]
+        self.cb_hsaved["values"] = names
+        if not names:
+            self.v_hsaved.set("")
+
+    def hist_keep(self):
+        if not self.hist_day:
+            messagebox.showinfo("A day in the past", "Fetch a day first.")
+            return
+        self.days().add(self.hist_day, hour=self.hist_hour())
+        self.fill_saved_days()
+        self.v_hsaved.set(self.days().label(0))
+        self.log(f"Kept: {self.hist_day.title()}.")
+
+    def hist_load_saved(self):
+        D = self.days()
+        name = self.v_hsaved.get()
+        i = next((k for k in range(len(D.items)) if D.label(k) == name), None)
+        if i is None:
+            return
+        day = D.day(i)
+        self.v_hid.set(day.ident or "")
+        if day.lat is not None:
+            self.v_hlat.set(f"{day.lat:.4f}")
+            self.v_hlon.set(f"{day.lon:.4f}")
+        self.set_hist_date(day.date)
+        self.show_hist_day(day)
+        h = D.items[i].get("hour")
+        if h is not None and self.tv_hist.exists(str(h)):
+            self.tv_hist.selection_set(str(h))
+            self.hist_detail()
+
+    def hist_forget(self):
+        D = self.days()
+        name = self.v_hsaved.get()
+        i = next((k for k in range(len(D.items)) if D.label(k) == name), None)
+        if i is None:
+            return
+        D.remove(i)
+        self.v_hsaved.set("")
+        self.fill_saved_days()
+
+    def famous_menu(self):
+        """Days that are famous for their weather."""
+        m = tk.Menu(self, tearoff=0)
+        for ident, name, lat, lon, date, hour, why in xp_history.notable():
+            label = f"{date.strftime('%d %b %Y')}  {name} - {why}"
+            m.add_command(label=label[:90],
+                          command=lambda i=ident, la=lat, lo=lon, d=date, h=hour: self.hist_famous(i, la, lo, d, h))
+        self._popup(m)
+
+    def hist_famous(self, ident, lat, lon, date, hour):
+        self.v_hid.set(ident)
+        self.v_hlat.set(f"{lat:.4f}")
+        self.v_hlon.set(f"{lon:.4f}")
+        self.set_hist_date(date)
+        self._hist_want_hour = hour
+        self.hist_fetch()
 
     # ======================================================================
     # Approach practice
@@ -4613,6 +5080,8 @@ class App(tk.Tk):
             lt, sysclock = None, True
         elif self.v_timemode.get() == "there":
             lt, sysclock = self.time_there(dep), False
+        elif self.v_timemode.get() == "hist" and getattr(self, "_hist_when", None):
+            lt, sysclock = self._hist_when, False
         else:
             m = core.MONTHS.index(self.v_month.get())
             hh, _, mm = self.v_hour.get().partition(":")

@@ -33,6 +33,8 @@ Python + Tkinter, no build step, no account, works offline.
 
 **Builds weather worth flying in.** A workshop for the conditions themselves: three cloud layers by hand, turbulence and wind shear per wind layer — all of which X-Plane accepts and most tools never send — and a read-out of what it means. Where the freezing level sits, whether you'd pick up ice and what kind, how rough each level is, the crosswind on the best runway, and whether your aeroplane is up to it. Thirteen one-click hazards from fog to freezing rain, and a generator that builds a whole flight around any of them.
 
+**Flies a day that has already happened.** Pick a place, a date and an hour — 14 March 2019 at Aspen, the Blizzard of '78 at Boston, a Tuesday in 1961 over the Sahara — and it fetches the weather that was really there. Where a station filed METARs, those are the METARs, hour by hour, colour-coded VFR to LIFR so you can watch the front come through and pick your moment. Everywhere else, and for dates before the station existed, it falls back to ERA5 reanalysis, which covers the whole planet back to 1940 and is labelled as the model it is. It sets the sim's date and time to match, so the sun and the season go with the weather. Days you liked can be kept by name, and everything fetched is cached, so it flies again offline.
+
 **Finds real weather to fly into.** Every current METAR worldwide from aviationweather.gov, ranked by how nasty it is: thunderstorms, snow and freezing rain, strong or gusty wind, fog, low ceilings, low visibility, dust and smoke. Pick a row and it builds a flight into it — or out of it.
 
 **Scores the flight.** It watches the landing and grades touchdown rate, distance past the threshold, centreline offset and smoothness, then writes it into a logbook with hours, miles, airports and badges, and a rating from Student to Legend.
@@ -53,6 +55,8 @@ Python + Tkinter, no build step, no account, works offline.
 </p>
 
 ![A steep turn, graded](docs/screenshot-checkride.png)
+
+![14 March 2019 at Aspen, hour by hour](docs/screenshot-history.png)
 
 ---
 
@@ -103,6 +107,7 @@ python xp_flight_ideas.py --wonders-near KBJC        # what's worth seeing near 
 | `xp_radio.py` | ATIS, radio calls, your own landing spots |
 | `xp_images.py` | maps, airport diagrams, sky pictures, photos |
 | `xp_score.py` | landing scoring and the logbook |
+| `xp_history.py` | the weather on a past date, from two archives |
 | `xp_coach.py` | reads the logbook back to you, and rolling currency |
 | `xp_checkride.py` | manoeuvres graded live against real tolerances |
 | `xp_fleet.py` | where each of your aeroplanes was left |
@@ -129,10 +134,13 @@ All optional; the app works with no internet at all, using only your own scenery
 | [flightplandatabase.com](https://flightplandatabase.com) | routes shared by other pilots |
 | [OpenSky Network](https://opensky-network.org) | which aircraft are airborne right now |
 | [opentopodata.org](https://www.opentopodata.org) | terrain elevations |
+| [Iowa State ASOS archive](https://mesonet.agron.iastate.edu/request/download.phtml) | archived METARs, for flying a past date |
+| [Open-Meteo](https://open-meteo.com) | ERA5 reanalysis, for past dates anywhere on earth |
 | Wikipedia | airport photos and articles |
 
 ## Notes
 
+- Historical weather from reanalysis is modelled, not observed, and ERA5 carries no visibility at all — the app derives it from the temperature/dew-point spread and the precipitation, and says so on every hour it does that for.
 - The checkride grader and the currency counters are modelled on the FAA's numbers because those are the ones most people know. Nothing done in a simulator counts towards anything real.
 - Performance figures are estimates calibrated against one light aircraft's published data. They are a sanity check, not certified performance data — fly with your own margins.
 - The phone-briefing server runs only while its window is open, and while it does, anything on your network can open that page.

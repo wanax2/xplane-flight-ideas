@@ -1,4 +1,4 @@
-X-PLANE FLIGHT IDEAS  v6.7
+X-PLANE FLIGHT IDEAS  v6.8
 ========================
 
 Files
@@ -24,6 +24,7 @@ Files
   xp_approach.py            approach geometry, runway choice, minimums
   xp_hazard.py              icing, turbulence, shear, and 13 inclement-weather scenarios
   xp_avionics.py            tunes the radios, sets the bugs, arms the autopilot
+  xp_history.py             the weather on a past date, from two archives
   xp_coach.py               reads your logbook back to you, and rolling currency
   xp_checkride.py           manoeuvres graded live against real tolerances
   xp_fleet.py               where each of your aeroplanes was left
@@ -461,6 +462,42 @@ tick "Add Python to PATH" during install). Nothing else to install.
    lowvis     - an approach down to minimums in fog or heavy haze; IFR aircraft
                 get the ILS to DH, VFR ones get a no-horizon haze flight (v4.6)
 
+   A DAY IN THE PAST (Weather > A day in the past)   (v6.8)
+   Pick a place, a date and an hour, and fly the weather that was actually
+   there. Type an airport, or a latitude and longitude for somewhere with no
+   airport at all, set the date, and press Fetch.
+
+   It comes back with the whole day, hour by hour in local time, colour-coded
+   VFR to LIFR. Pick an hour and you get the report itself, what the ceiling,
+   visibility, wind, temperature and altimeter were, and where the freezing
+   level sat. "Fly this hour" pours it into the weather boxes and - unless you
+   untick it - sets the sim's date and time to match, so the sun angle and the
+   season are the ones that went with that weather. "Build a flight for this
+   day" generates flights from there and gives them all that weather.
+   "Approach into it..." drops you on final in it.
+
+   Two sources, tried in that order:
+     - Iowa State University's ASOS archive, which keeps the raw METARs that
+       airports actually filed, going back decades. Where a station reported,
+       this is the weather, not a model of it.
+     - Open-Meteo's ERA5 reanalysis for everywhere else, and for dates before
+       the station existed: hourly temperature, dew point, wind, pressure and
+       cloud in three layers for any point on earth back to 1940.
+   The reanalysis is honest about being a model. It has no visibility figure at
+   all, so the app works one out from the temperature-dew point spread and the
+   rain, and the cloud base comes from the spread as well. Every hour from it
+   is labelled, and the read-out says so in as many words. Treat it as the right
+   kind of day rather than the exact sky.
+
+   "Days worth flying" is a short list of dates that are famous for their
+   weather - the Blizzard of '78 at Boston, the Great Storm at Heathrow, Sandy
+   coming ashore at LaGuardia - each jumping straight to the worst hour of it.
+
+   "Keep this day" saves a day under its own name so you can fly it again
+   without fetching it, and every day you fetch is cached anyway, so it works
+   with the internet off afterwards. Both archives are free and need no account.
+   If neither can be reached the app says so and everything else carries on.
+
    THE COACH (Progress > Coach)   (v6.7)
    The logbook has been recording every landing for a long time and nothing
    ever read any of it. This does. It looks for the patterns you would not
@@ -673,9 +710,23 @@ WHERE THE ONLINE DATA COMES FROM
                                 the OurAirports open airport database
    en.wikipedia.org             airport photos and articles
    opentopodata.org             terrain elevations
+   mesonet.agron.iastate.edu    archived METARs, for flying a past date
+   archive-api.open-meteo.com   ERA5 reanalysis, for past dates anywhere
    All of them are optional. The app works with no internet at all - it just
    uses your own X-Plane scenery instead.
 
+
+WHAT'S NEW IN 6.8
+   - Fly a day that has already happened. Pick a place, a date and an hour and
+     the app fetches the weather that was really there: the METARs the station
+     filed where there was one, a worldwide reanalysis everywhere else, back to
+     1940. The whole day comes back hour by hour so you can watch the front go
+     through and pick your moment.
+   - It sets the sim's date and time to match, so the sun and the season go with
+     the weather.
+   - Days can be kept by name and flown again, and every day fetched is cached,
+     so it all works offline afterwards.
+   - A short list of days famous for their weather, to start you off.
 
 WHAT'S NEW IN 6.7
    - A coach that reads your logbook: the conditions you are worse in, the part
