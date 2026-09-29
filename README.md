@@ -29,6 +29,8 @@ Python + Tkinter, no build step, no account, works offline.
 
 **Does the numbers.** Density altitude, the best runway for the wind with head and crosswind components, takeoff and landing distances against the runway you actually have, fuel with reserves against tank capacity, and weight against MTOW. Calibrated against a Cessna 172's published figures — within a few percent from sea level to 8,000 ft — but explicitly rules of thumb, not a flight manual.
 
+**Builds weather worth flying in.** A workshop for the conditions themselves: three cloud layers by hand, turbulence and wind shear per wind layer — all of which X-Plane accepts and most tools never send — and a read-out of what it means. Where the freezing level sits, whether you'd pick up ice and what kind, how rough each level is, the crosswind on the best runway, and whether your aeroplane is up to it. Thirteen one-click hazards from fog to freezing rain, and a generator that builds a whole flight around any of them.
+
 **Finds real weather to fly into.** Every current METAR worldwide from aviationweather.gov, ranked by how nasty it is: thunderstorms, snow and freezing rain, strong or gusty wind, fog, low ceilings, low visibility, dust and smoke. Pick a row and it builds a flight into it — or out of it.
 
 **Scores the flight.** It watches the landing and grades touchdown rate, distance past the threshold, centreline offset and smoothness, then writes it into a logbook with hours, miles, airports and badges, and a rating from Student to Legend.
@@ -81,6 +83,7 @@ python xp_flight_ideas.py --wonders-near KBJC        # what's worth seeing near 
 | `xp_scenery.py` | which add-on scenery you have installed |
 | `xp_perf.py` | density altitude, runway lengths, fuel, weight |
 | `xp_approach.py` | approach geometry, runway choice, minimums |
+| `xp_hazard.py` | icing, turbulence, shear and the inclement-weather scenarios |
 | `xp_wx.py` | live weather from aviationweather.gov |
 | `xp_scenic.py` | the worldwide scenic database and the random generator |
 | `xp_wonders.py` | 429 natural wonders and landmarks, with positions and heights |

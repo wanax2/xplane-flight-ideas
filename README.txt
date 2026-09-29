@@ -1,4 +1,4 @@
-X-PLANE FLIGHT IDEAS  v6.3
+X-PLANE FLIGHT IDEAS  v6.4
 ========================
 
 Files
@@ -22,6 +22,7 @@ Files
   xp_scenery.py             which add-on scenery you have installed
   xp_perf.py                density altitude, runway lengths, fuel, weight
   xp_approach.py            approach geometry, runway choice, minimums
+  xp_hazard.py              icing, turbulence, shear, and 13 inclement-weather scenarios
   xp_radio.py               ATIS, radio calls, and your own landing spots
   xp_web.py                 the briefing for your phone, and backups
   xp_qr.py                  the QR code shown for the phone briefing
@@ -221,6 +222,46 @@ tick "Add Python to PATH" during install). Nothing else to install.
    the pack. "My scenery..." lists every pack, and has a "Never flown there" tab
    that finds the add-on airports your logbook has never visited - the ones you
    installed and forgot about.
+
+   THE WEATHER TAB   (v6.4)
+   Three sub-tabs.
+
+   Build it - the mission weather, with room to work. Sky, visibility, ceiling,
+   temperature, altimeter and surface wind as before, plus the things X-Plane
+   accepts that the app used to ignore:
+   - Turbulence for each of the three wind layers - surface, middle, high -
+     from smooth to extreme, instead of guessing it from the gust value.
+   - Wind shear in degrees for each layer: how far the wind swings as you come
+     down. This is what makes an approach genuinely hard.
+   - Three cloud layers by hand: type, cover, base and tops for each. Tick
+     "Build the layers by hand" to override the Sky preset. Scattered below,
+     broken above, overcast on top, and you choose which one you break out of.
+   Down the side it tells you what you would actually be flying in: the freezing
+   level, whether you would pick up ice and what kind, how rough each level is,
+   how much the wind swings, the crosswind on the best runway here, and whether
+   your aeroplane is up to it. There's a sky picture too.
+   Thirteen one-click hazards fill the whole thing in - see below.
+
+   Real weather now - the live METAR hunt that used to be the whole tab. It
+   hasn't changed.
+
+   Fly into it - pick a hazard and it builds the whole flight: a route, a time
+   of year, an airport that suits (an instrument runway for low IFR, somewhere
+   cold for icing, somewhere high for density altitude, a runway across the wind
+   for crosswinds) and the conditions to match. The thirteen:
+     Low IFR to minimums     Fog that won't lift     Scud running
+     Airframe icing          Freezing rain           Heavy snow
+     Thunderstorm            Crosswind at the limit  Wind shear on final
+     Mountain rotor          A front going through   Hot and high
+     Dust and smoke
+   Each says what you're practising, and the briefing carries the analysis with
+   it.
+
+   The icing figures come from the surface temperature and the standard lapse
+   rate - where the freezing level is, where -20 C is, and which of your cloud
+   layers sit between them. It's a rule of thumb for a simulator, not an icing
+   forecast.
+
 
    APPROACH PRACTICE  ("Approach practice..." on Fly it > Set it up)   (v6.3)
    Puts you on final anywhere, as many times as you like. No route, no idea, no
@@ -547,6 +588,21 @@ WHERE THE ONLINE DATA COMES FROM
    opentopodata.org             terrain elevations
    All of them are optional. The app works with no internet at all - it just
    uses your own X-Plane scenery instead.
+
+
+WHAT'S NEW IN 6.4
+   - Weather is now three tabs: Build it, Real weather now, and Fly into it.
+   - The mission weather moved off the Fly it tab, where it never had enough
+     room, into a proper workshop. Fly it keeps the four choices (mission, real,
+     preset, leave alone) and a one-line summary.
+   - Turbulence and wind shear can be set per wind layer, and cloud layers built
+     by hand - all of which X-Plane accepted all along and the app never sent.
+   - Thirteen inclement-weather scenarios, either as one-click presets in the
+     workshop or as whole generated flights under "Fly into it".
+   - The app now works out the freezing level and your icing risk, and says
+     plainly when the weather is beyond the aeroplane you've chosen.
+   - Fixed: the scenery scan could fail with "main thread is not in main loop"
+     because it read a setting from a background thread.
 
 
 WHAT'S NEW IN 6.3

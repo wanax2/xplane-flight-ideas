@@ -48,6 +48,7 @@ import xp_qr                           # noqa: E402
 import xp_scenic as scenic              # noqa: E402
 import xp_wonders as wonders            # noqa: E402
 import xp_approach                     # noqa: E402
+import xp_hazard                       # noqa: E402
 import xp_acf                           # noqa: E402
 import xp_score                         # noqa: E402
 import xp_export as exp                 # noqa: E402
@@ -377,6 +378,7 @@ class App(tk.Tk):
         rpw.add(mid, weight=0)
         rpw.add(right, weight=1)
         left.configure(padding=(0, 0, 10, 8))
+        self._wx_vars()
         self._build_left(left)
         self._build_mid(mid)
         self._build_right(right)
@@ -394,6 +396,28 @@ class App(tk.Tk):
         self.log(f"Switched to {mode} mode.")
         if self.idea:
             self.show_pictures()
+
+    def _wx_vars(self):
+        """Every weather variable, made before any tab that binds to one."""
+        c = self.cfg
+        self.v_wxmode = tk.StringVar(value=c.get("wxmode", "mission"))
+        self.v_sky = tk.StringVar()
+        self.v_wdir = tk.StringVar(value="0")
+        self.v_wspd = tk.StringVar(value="0")
+        self.v_gust = tk.StringVar(value="0")
+        self.v_temp = tk.StringVar(value="15")
+        self.v_vis = tk.StringVar(value="10")
+        self.v_ceil = tk.StringVar(value="none")
+        self.v_alt = tk.StringVar(value="29.92")
+        self.v_preset = tk.StringVar(value=XP_PRESETS[0])
+        self.sky_names = {v[0]: k for k, v in core.SKY.items()}
+        # the three wind layers: surface, middle, high
+        self.v_turb = [tk.StringVar(value=x) for x in ("from the gusts", "from the gusts", "from the gusts")]
+        self.v_shear = [tk.StringVar(value="0") for _ in range(3)]
+        # three cloud layers, only used when you tick "build the layers by hand"
+        self.v_layers_on = tk.BooleanVar(value=False)
+        self.v_layer = [[tk.StringVar(value="none"), tk.StringVar(value="0"),
+                         tk.StringVar(value=""), tk.StringVar(value="")] for _ in range(3)]
 
     def _build_left(self, f):
         c = self.cfg
@@ -663,11 +687,20 @@ class App(tk.Tk):
         self._build_live_flight(t8)
         self.tab_live = self._home_of(t8, nb, fly)
 
-        # --- Live weather tab ---
-        t4 = ttk.Frame(nb, padding=6)
-        nb.add(t4, text="Weather")
+        # --- Weather: build it, find it, fly into it ---
+        wxg = self._group(nb, "Weather")
+        tshop = ttk.Frame(wxg, padding=6)
+        wxg.add(tshop, text="Build it")
+        self._build_wxshop(tshop)
+        self.tab_wxshop = self._home_of(tshop, nb, wxg)
+        t4 = ttk.Frame(wxg, padding=6)
+        wxg.add(t4, text="Real weather now")
         self._build_live(t4)
-        self.tab_wx = t4
+        self.tab_wx = self._home_of(t4, nb, wxg)
+        thaz = ttk.Frame(wxg, padding=6)
+        wxg.add(thaz, text="Fly into it")
+        self._build_wxfly(thaz)
+        self.tab_wxfly = self._home_of(thaz, nb, wxg)
 
         # --- Explore: where else could I go? ---
         exp = self._group(nb, "Explore")
@@ -933,57 +966,32 @@ class App(tk.Tk):
         # weather
         g = ttk.LabelFrame(f, text="Weather", padding=6)
         g.grid(row=1, column=1, rowspan=2, sticky="nsew", pady=4)
-        self.v_wxmode = tk.StringVar(value=c.get("wxmode", "mission"))
-        self.v_sky = tk.StringVar()
-        self.v_wdir = tk.StringVar(value="0")
-        self.v_wspd = tk.StringVar(value="0")
-        self.v_gust = tk.StringVar(value="0")
-        self.v_temp = tk.StringVar(value="15")
-        self.v_vis = tk.StringVar(value="10")
-        self.v_ceil = tk.StringVar(value="none")
-        self.v_alt = tk.StringVar(value="29.92")
-        self.v_preset = tk.StringVar(value=XP_PRESETS[0])
-        ttk.Radiobutton(g, text="Mission weather (edit below)", value="mission", variable=self.v_wxmode).grid(row=0, column=0, columnspan=4, sticky="w")
-        ttk.Label(g, text="Sky:").grid(row=1, column=0, sticky="w")
-        self.sky_names = {v[0]: k for k, v in core.SKY.items()}
-        cb = ttk.Combobox(g, textvariable=self.v_sky, values=list(self.sky_names), width=40, state="readonly")
-        cb.grid(row=1, column=1, columnspan=3, sticky="w")
-        self.cb_sky = cb
-        cb.bind("<<ComboboxSelected>>", lambda e: self.on_sky_pick())
-        ttk.Label(g, text="Wind from (T):").grid(row=2, column=0, sticky="w")
-        ttk.Spinbox(g, textvariable=self.v_wdir, from_=0, to=350, increment=10, width=5, wrap=True).grid(row=2, column=1, sticky="w")
-        ttk.Label(g, text="Speed kt:").grid(row=2, column=2, sticky="w")
-        ttk.Spinbox(g, textvariable=self.v_wspd, from_=0, to=60, width=5).grid(row=2, column=3, sticky="w")
-        ttk.Label(g, text="Gusts +kt:").grid(row=3, column=0, sticky="w")
-        ttk.Spinbox(g, textvariable=self.v_gust, from_=0, to=30, width=5).grid(row=3, column=1, sticky="w")
-        ttk.Label(g, text="Temp C:").grid(row=3, column=2, sticky="w")
-        ttk.Spinbox(g, textvariable=self.v_temp, from_=-40, to=50, width=5).grid(row=3, column=3, sticky="w")
-        ttk.Label(g, text="Visibility SM:").grid(row=4, column=0, sticky="w")
-        ttk.Combobox(g, textvariable=self.v_vis, width=6,
-                     values=["0.25", "0.5", "0.75", "1", "1.5", "2", "3", "5", "7", "10", "20"]
-                     ).grid(row=4, column=1, sticky="w")
-        ttk.Label(g, text="Altimeter:").grid(row=4, column=2, sticky="w")
-        ttk.Entry(g, textvariable=self.v_alt, width=6).grid(row=4, column=3, sticky="w")
-        ttk.Label(g, text="Ceiling ft AGL:").grid(row=5, column=0, sticky="w")
-        ttk.Combobox(g, textvariable=self.v_ceil, width=6,
-                     values=["none", "100", "200", "300", "400", "600", "800", "1000", "1500", "2500", "4000"]
-                     ).grid(row=5, column=1, sticky="w")
-        ttk.Button(g, text="Minimums", width=9, command=lambda: self.wx_quick("min")).grid(row=5, column=2, sticky="w")
-        ttk.Button(g, text="Clear day", width=9, command=lambda: self.wx_quick("vfr")).grid(row=5, column=3, sticky="w")
+        ttk.Radiobutton(g, text="Mission weather", value="mission",
+                        variable=self.v_wxmode).grid(row=0, column=0, columnspan=2, sticky="w")
+        self.l_wxsum = ttk.Label(g, text="", style="Muted.TLabel", justify="left",
+                                 wraplength=self.theme.px(330))
+        self.l_wxsum.grid(row=1, column=0, columnspan=2, sticky="w", padx=(18, 0))
         self.l_rules = ttk.Label(g, text="", style="Muted.TLabel")
-        self.l_rules.grid(row=6, column=0, columnspan=4, sticky="w")
-        self.l_wind = ttk.Label(g, text="", style="Muted.TLabel", wraplength=360)
-        self.l_wind.grid(row=7, column=0, columnspan=4, sticky="w", pady=2)
-        for v in (self.v_wdir, self.v_wspd):
-            v.trace_add("write", lambda *a: self.update_wind_label())
-        for v in (self.v_month, self.v_hour, self.v_sky, self.v_gust, self.v_temp, self.v_vis, self.v_ceil):
-            v.trace_add("write", lambda *a: self.idea and self.debounce("sky", self.draw_skypic, 250))
-        self.v_ceil.trace_add("write", lambda *a: self.update_rules_label())
-        self.v_vis.trace_add("write", lambda *a: self.update_rules_label())
-        ttk.Radiobutton(g, text="Real-world weather", value="real", variable=self.v_wxmode).grid(row=8, column=0, columnspan=4, sticky="w")
-        ttk.Radiobutton(g, text="X-Plane preset:", value="preset", variable=self.v_wxmode).grid(row=9, column=0, sticky="w")
-        ttk.Combobox(g, textvariable=self.v_preset, values=XP_PRESETS, width=24, state="readonly").grid(row=9, column=1, columnspan=3, sticky="w")
-        ttk.Radiobutton(g, text="Leave X-Plane's weather alone", value="keep", variable=self.v_wxmode).grid(row=10, column=0, columnspan=4, sticky="w")
+        self.l_rules.grid(row=2, column=0, columnspan=2, sticky="w", padx=(18, 0))
+        self.l_wind = ttk.Label(g, text="", style="Muted.TLabel", wraplength=self.theme.px(330))
+        self.l_wind.grid(row=3, column=0, columnspan=2, sticky="w", padx=(18, 0), pady=2)
+        br = ttk.Frame(g)
+        br.grid(row=4, column=0, columnspan=2, sticky="w", padx=(18, 0), pady=(2, 6))
+        ttk.Button(br, text="Edit the weather...", style="Quiet.TButton",
+                   command=lambda: self.goto(self.tab_wxshop)).pack(side="left")
+        ttk.Button(br, text="Minimums", width=9, style="Quiet.TButton",
+                   command=lambda: self.wx_quick("min")).pack(side="left", padx=4)
+        ttk.Button(br, text="Clear day", width=9, style="Quiet.TButton",
+                   command=lambda: self.wx_quick("vfr")).pack(side="left")
+        ttk.Radiobutton(g, text="Real-world weather", value="real",
+                        variable=self.v_wxmode).grid(row=5, column=0, columnspan=2, sticky="w")
+        ttk.Radiobutton(g, text="X-Plane preset:", value="preset",
+                        variable=self.v_wxmode).grid(row=6, column=0, sticky="w")
+        ttk.Combobox(g, textvariable=self.v_preset, values=XP_PRESETS, width=24,
+                     state="readonly").grid(row=6, column=1, sticky="w")
+        ttk.Radiobutton(g, text="Leave X-Plane's weather alone", value="keep",
+                        variable=self.v_wxmode).grid(row=7, column=0, columnspan=2, sticky="w")
+        g.columnconfigure(1, weight=1)
 
         # route / extras
         g = ttk.LabelFrame(f, text="Route and twist", padding=6)
@@ -1563,6 +1571,363 @@ class App(tk.Tk):
             self.open_picker()
         ttk.Button(t2, text="Show me one of these airports", style="Big.TButton",
                    command=fly_it).pack(anchor="e", pady=(6, 0))
+
+    # ======================================================================
+    # Weather: build it
+    # ======================================================================
+    TURB_CHOICES = ["from the gusts", "smooth", "light", "moderate", "severe", "extreme"]
+    TURB_VALUE = {"smooth": 0.05, "light": 0.18, "moderate": 0.35, "severe": 0.6, "extreme": 0.9}
+    CLOUD_KINDS = ["none", "cirrus", "stratus", "cumulus", "cumulonimbus"]
+    COVER = [("clear", 0.0), ("few", 0.15), ("scattered", 0.4), ("broken", 0.75), ("overcast", 1.0)]
+
+    def _build_wxshop(self, f):
+        """The workshop: build the weather, and see what you would be flying in."""
+        head = ttk.Frame(f)
+        head.pack(fill="x")
+        ttk.Label(head, text="Build the weather for this flight", style="Head.TLabel").pack(side="left")
+        ttk.Button(head, text="Clear day", style="Quiet.TButton",
+                   command=lambda: self.wx_quick("vfr")).pack(side="right")
+        ttk.Button(head, text="Minimums", style="Quiet.TButton",
+                   command=lambda: self.wx_quick("min")).pack(side="right", padx=4)
+        ttk.Label(f, text="These are the 'Mission weather' settings on Fly it. Everything here is sent to "
+                         "X-Plane when you launch.", style="Muted.TLabel").pack(anchor="w", pady=(0, 6))
+
+        body = ttk.PanedWindow(f, orient="horizontal")
+        body.pack(fill="both", expand=True)
+        lf = ScrollFrame(body, self.theme, width=self.theme.px(480))
+        rf = ttk.Frame(body, padding=(8, 0, 0, 0))
+        body.add(lf, weight=0)
+        body.add(rf, weight=1)
+        L = lf.inner
+        L.configure(padding=(0, 0, 10, 8))
+
+        # --- the basics ---
+        g = ttk.LabelFrame(L, text="The basics", padding=(8, 6))
+        g.pack(fill="x")
+        ttk.Label(g, text="Sky:").grid(row=0, column=0, sticky="w")
+        self.cb_sky = ttk.Combobox(g, textvariable=self.v_sky, values=list(self.sky_names),
+                                   width=38, state="readonly")
+        self.cb_sky.grid(row=0, column=1, columnspan=3, sticky="ew", pady=1)
+        self.cb_sky.bind("<<ComboboxSelected>>", lambda e: self.on_sky_pick())
+        ttk.Label(g, text="Visibility SM:").grid(row=1, column=0, sticky="w")
+        ttk.Combobox(g, textvariable=self.v_vis, width=7,
+                     values=["0.25", "0.5", "0.75", "1", "1.5", "2", "3", "5", "7", "10", "20"]
+                     ).grid(row=1, column=1, sticky="w")
+        ttk.Label(g, text="Ceiling ft AGL:").grid(row=1, column=2, sticky="e", padx=(8, 4))
+        ttk.Combobox(g, textvariable=self.v_ceil, width=7,
+                     values=["none", "100", "200", "300", "400", "600", "800", "1000", "1500", "2500", "4000"]
+                     ).grid(row=1, column=3, sticky="w")
+        ttk.Label(g, text="Temp C:").grid(row=2, column=0, sticky="w")
+        ttk.Spinbox(g, textvariable=self.v_temp, from_=-40, to=50, width=6).grid(row=2, column=1, sticky="w")
+        ttk.Label(g, text="Altimeter:").grid(row=2, column=2, sticky="e", padx=(8, 4))
+        ttk.Entry(g, textvariable=self.v_alt, width=8).grid(row=2, column=3, sticky="w")
+        self.l_fz = ttk.Label(g, text="", style="Muted.TLabel")
+        self.l_fz.grid(row=3, column=0, columnspan=4, sticky="w", pady=(4, 0))
+        g.columnconfigure(1, weight=1)
+
+        # --- wind, turbulence and shear ---
+        g = ttk.LabelFrame(L, text="Wind, turbulence and shear", padding=(8, 6))
+        g.pack(fill="x", pady=8)
+        ttk.Label(g, text="Surface wind from (T):").grid(row=0, column=0, sticky="w", columnspan=2)
+        ttk.Spinbox(g, textvariable=self.v_wdir, from_=0, to=350, increment=10, width=6,
+                    wrap=True).grid(row=0, column=2, sticky="w")
+        ttk.Label(g, text="at kt:").grid(row=0, column=3, sticky="e", padx=(6, 2))
+        ttk.Spinbox(g, textvariable=self.v_wspd, from_=0, to=60, width=5).grid(row=0, column=4, sticky="w")
+        ttk.Label(g, text="gusting +kt:").grid(row=1, column=0, sticky="w", columnspan=2)
+        ttk.Spinbox(g, textvariable=self.v_gust, from_=0, to=40, width=5).grid(row=1, column=2, sticky="w")
+        ttk.Label(g, text="X-Plane takes three wind layers. This is what each one feels like:",
+                  style="Muted.TLabel").grid(row=2, column=0, columnspan=5, sticky="w", pady=(6, 2))
+        for i, name in enumerate(("Surface", "Middle", "High")):
+            ttk.Label(g, text=name + ":").grid(row=3 + i, column=0, sticky="w")
+            ttk.Combobox(g, textvariable=self.v_turb[i], values=self.TURB_CHOICES, state="readonly",
+                         width=15).grid(row=3 + i, column=1, columnspan=2, sticky="w", pady=1)
+            ttk.Label(g, text="shear \u00b0:").grid(row=3 + i, column=3, sticky="e", padx=(6, 2))
+            ttk.Spinbox(g, textvariable=self.v_shear[i], from_=0, to=120, increment=5,
+                        width=5).grid(row=3 + i, column=4, sticky="w")
+
+        # --- cloud layers ---
+        g = ttk.LabelFrame(L, text="Cloud layers", padding=(8, 6))
+        g.pack(fill="x")
+        ttk.Checkbutton(g, text="Build the layers by hand (overrides the Sky box above)",
+                        variable=self.v_layers_on).grid(row=0, column=0, columnspan=5, sticky="w")
+        for i, lbl in enumerate(("Lowest", "Middle", "Top")):
+            ttk.Label(g, text=lbl + ":").grid(row=1 + i, column=0, sticky="w")
+            ttk.Combobox(g, textvariable=self.v_layer[i][0], values=self.CLOUD_KINDS, state="readonly",
+                         width=10).grid(row=1 + i, column=1, sticky="w", pady=1)
+            ttk.Combobox(g, textvariable=self.v_layer[i][1], state="readonly", width=8,
+                         values=[c[0] for c in self.COVER]).grid(row=1 + i, column=2, sticky="w", padx=2)
+            ttk.Entry(g, textvariable=self.v_layer[i][2], width=6).grid(row=1 + i, column=3, sticky="w")
+            ttk.Entry(g, textvariable=self.v_layer[i][3], width=6).grid(row=1 + i, column=4, sticky="w", padx=2)
+        ttk.Label(g, text="base ft AGL, then tops ft AGL", style="Muted.TLabel").grid(
+            row=4, column=3, columnspan=2, sticky="w")
+        ttk.Button(g, text="Copy the Sky preset into these boxes", style="Quiet.TButton",
+                   command=self.wx_layers_from_sky).grid(row=5, column=0, columnspan=5, sticky="w", pady=(4, 0))
+
+        # --- the hazard shortcuts ---
+        g = ttk.LabelFrame(L, text="Or start from a hazard", padding=(8, 6))
+        g.pack(fill="x", pady=8)
+        for i, (k, h) in enumerate(xp_hazard.HAZARDS.items()):
+            b = ttk.Button(g, text=h["name"], style="Quiet.TButton", width=22,
+                           command=lambda kk=k: self.wx_from_hazard(kk))
+            b.grid(row=i // 2, column=i % 2, sticky="ew", padx=2, pady=1)
+            Tooltip(b, h["what"] + "  " + h["practise"])
+        g.columnconfigure(0, weight=1)
+        g.columnconfigure(1, weight=1)
+
+        # --- the read-out ---
+        ttk.Label(rf, text="What you would be flying in", style="Head.TLabel").pack(anchor="w")
+        self.shop_txt = ScrolledText(rf, wrap="word", height=14, font=MONO)
+        self.theme.track(self.shop_txt, "text")
+        self.shop_txt.pack(fill="both", expand=True, pady=4)
+        self.shop_txt.config(state="disabled")
+        self.shop_cv = tk.Canvas(rf, height=self.theme.px(160), width=self.theme.px(380),
+                                 background="#e9eef1")
+        self.theme.track(self.shop_cv, "canvas")
+        self.shop_cv.pack(fill="x")
+        self.shop_cv.bind("<Configure>", lambda e: self.debounce("wxsky", self.draw_wxshop, 200))
+        b = ttk.Frame(rf)
+        b.pack(fill="x", pady=(6, 0))
+        ttk.Button(b, text="Use this for the current flight", style="Big.TButton",
+                   command=lambda: (self.v_wxmode.set("mission"), self.goto_fly())).pack(side="left")
+        ttk.Label(b, text="  It already is - this is the mission weather.",
+                  style="Muted.TLabel").pack(side="left")
+
+        for v in ([self.v_sky, self.v_vis, self.v_ceil, self.v_temp, self.v_alt, self.v_wdir,
+                   self.v_wspd, self.v_gust, self.v_layers_on] + self.v_turb + self.v_shear
+                  + [x for row in self.v_layer for x in row]):
+            v.trace_add("write", lambda *a: self.debounce("wxshop", self.draw_wxshop, 250))
+
+    def goto_fly(self):
+        self.nb.select(1)
+
+    def wx_layers_from_sky(self, enable=True):
+        """Fill the layer boxes from whatever the Sky preset is now."""
+        w = self.cur_wx(raw=True)
+        for i in range(3):
+            if i < len(w.layers):
+                t, c, b, th = w.layers[i]
+                self.v_layer[i][0].set(t)
+                self.v_layer[i][1].set(min(self.COVER, key=lambda x: abs(x[1] - c))[0])
+                self.v_layer[i][2].set(str(int(b)))
+                self.v_layer[i][3].set(str(int(b + th)))
+            else:
+                self.v_layer[i][0].set("none")
+                self.v_layer[i][1].set("clear")
+                self.v_layer[i][2].set("")
+                self.v_layer[i][3].set("")
+        if enable:
+            self.v_layers_on.set(True)
+
+    def wx_from_hazard(self, key):
+        """Pour one of the hazard scenarios into the boxes."""
+        w = xp_hazard.build(key, core, random.Random())
+        self.v_wxmode.set("mission")
+        self.sky_names = {w.sky_text: "metar", **{v[0]: k for k, v in core.SKY.items()}} \
+            if w.custom else {v[0]: k for k, v in core.SKY.items()}
+        if hasattr(self, "cb_sky"):
+            self.cb_sky["values"] = list(self.sky_names)
+        self._hazard_wx = w
+        self.v_sky.set(w.sky_text)
+        self.v_vis.set(f"{w.vis:g}")
+        self.set_ceil_box(w.ceiling)
+        self.v_temp.set(str(w.temp))
+        self.v_alt.set(f"{w.altimeter:.2f}")
+        self.v_wdir.set(str(w.wind_dir))
+        self.v_wspd.set(str(w.wind_spd))
+        self.v_gust.set(str(w.gust))
+        t = w.turbulence()
+        for i in range(3):
+            self.v_turb[i].set(min(self.TURB_VALUE, key=lambda k: abs(self.TURB_VALUE[k] - t[i])))
+        for i, sh in enumerate(w.shear_deg()):
+            self.v_shear[i].set(str(sh))
+        self.v_layers_on.set(False)
+        self.wx_layers_from_sky(enable=False)
+        self.log(f"Weather set to: {xp_hazard.HAZARDS[key]['name']}.")
+        self.draw_wxshop()
+
+    def wx_layers(self):
+        """The hand-built cloud layers, or None when the tick box is off."""
+        if not self.v_layers_on.get():
+            return None
+        out = []
+        cover = dict(self.COVER)
+        for kind, cov, base, tops in self.v_layer:
+            k = kind.get()
+            if k == "none" or not base.get().strip():
+                continue
+            b = self.num(base, 0)
+            t = self.num(tops, b + 2000)
+            out.append((k, cover.get(cov.get(), 0.0), int(b), int(max(200, t - b))))
+        out.sort(key=lambda l: l[2])
+        return out or None
+
+    def draw_wxshop(self):
+        """Refresh the read-out and the sky picture."""
+        if not hasattr(self, "shop_txt"):
+            return
+        w = self.cur_wx()
+        apt = None
+        if self.idea:
+            apt = self.idea.wx_at if self.idea.wx_at in self.idea.stops else self.idea.stops[0]
+        elev = apt["elev"] if apt else 0
+        lines = xp_hazard.analyse(w, elev, self.ac(), apt, core)
+        if apt:
+            lines.insert(0, f"At {apt['id']} {apt['name']}, field elevation {elev:,} ft:")
+        else:
+            lines.insert(0, "No flight picked yet, so this is read at sea level.")
+        self.set_text(self.shop_txt, "\n\n".join(lines))
+        self.update_rules_label()
+        self.update_wxsum()
+        try:
+            self.l_fz.config(text=f"Freezing level about {w.freezing_level(elev):,} ft "
+                                  f"({xp_hazard.icing_risk(w, elev)[0]} icing risk)")
+        except Exception:
+            pass
+        try:
+            pics.draw_sky(self.shop_cv, self.idea.month if self.idea else 6,
+                          self.idea.hour if self.idea else 12, w,
+                          elev=elev, lat=apt["lat"] if apt else 40)
+        except Exception as e:
+            self.log(f"sky picture: {e}")
+
+    def update_wxsum(self):
+        """The one-line summary shown on Fly it."""
+        if not hasattr(self, "l_wxsum"):
+            return
+        try:
+            w = self.cur_wx()
+            self.l_wxsum.config(text=w.describe())
+        except Exception:
+            pass
+
+    # ======================================================================
+    # Weather: fly into it
+    # ======================================================================
+    def _build_wxfly(self, f):
+        ttk.Label(f, text="Pick a hazard, get a flight into it", style="Head.TLabel").pack(anchor="w")
+        ttk.Label(f, text="This builds a whole flight - a route, a time of year and the conditions - "
+                          "around one thing going wrong. It uses the aeroplane and the area on the left.",
+                  style="Muted.TLabel").pack(anchor="w", pady=(0, 6))
+        body = ttk.PanedWindow(f, orient="horizontal")
+        body.pack(fill="both", expand=True)
+        lf = ttk.Frame(body)
+        rf = ttk.Frame(body, padding=(8, 0, 0, 0))
+        body.add(lf, weight=1)
+        body.add(rf, weight=2)
+        cols = ("name", "what")
+        tv = ttk.Treeview(lf, columns=cols, show="headings", selectmode="browse", height=14)
+        for col, h, wd in zip(cols, ("Hazard", "What it is"), (170, 300)):
+            tv.heading(col, text=h)
+            tv.column(col, width=wd, anchor="w", stretch=col == "what")
+        self.theme.fit_columns(tv)
+        tv.pack(fill="both", expand=True)
+        self.tv_haz = tv
+        for k, h in xp_hazard.HAZARDS.items():
+            tv.insert("", "end", iid=k, values=(h["name"], h["what"]))
+        tv.bind("<<TreeviewSelect>>", lambda e: self.haz_preview())
+        self.haz_txt = ScrolledText(rf, wrap="word", height=12, font=MONO)
+        self.theme.track(self.haz_txt, "text")
+        self.haz_txt.pack(fill="both", expand=True)
+        self.haz_txt.config(state="disabled")
+        b = ttk.Frame(f)
+        b.pack(fill="x", pady=(6, 0))
+        ttk.Button(b, text="Build me a flight into this", style="Big.TButton",
+                   command=lambda: self.haz_generate(False)).pack(side="left")
+        ttk.Button(b, text="Set up in X-Plane  \u203a\u203a", style="Big.TButton",
+                   command=lambda: self.haz_generate(True)).pack(side="left", padx=6)
+        self.l_haz = ttk.Label(b, text="", style="Muted.TLabel")
+        self.l_haz.pack(side="left", padx=8)
+        tv.selection_set("lowifr")
+
+    def haz_key(self):
+        s = self.tv_haz.selection()
+        return s[0] if s else "lowifr"
+
+    def haz_preview(self):
+        k = self.haz_key()
+        h = xp_hazard.HAZARDS[k]
+        w = xp_hazard.build(k, core, random.Random(1))
+        head = (f"{h['name'].upper()}\n{h['what']}\n\n"
+                f"What you're practising: {h['practise']}\n\n"
+                f"A sample of the conditions (the real one is rolled fresh each time):\n")
+        self.set_text(self.haz_txt, head + "\n" + "\n\n".join(xp_hazard.analyse(w, 500, self.ac())))
+
+    def haz_generate(self, setup):
+        """A flight built around one hazard."""
+        k = self.haz_key()
+        h = xp_hazard.HAZARDS[k]
+        try:
+            gen = self.gen or self.make_gen(random.randrange(1_000_000))
+        except (KeyError, RuntimeError) as e:
+            messagebox.showinfo("Fly into it", str(e))
+            return
+        self.gen = gen
+        rng = gen.rng
+        want = xp_hazard.wants(k)
+        pool = [a for a in gen.pool if gen.usable(a)]
+        if want["instrument"]:
+            hard = [a for a in pool if a.get("ils")] or pool
+            pool = hard
+        if want["high"]:
+            pool = sorted(pool, key=lambda a: -a["elev"])[:max(8, len(pool) // 6)] or pool
+        if want["cold"]:
+            cold = [a for a in pool if abs(a["lat"]) > 35] or pool
+            pool = cold
+        if not pool:
+            messagebox.showinfo("Fly into it", "No airports match - widen the area on the left.")
+            return
+        dest = pool[rng.randrange(len(pool))]
+        deps = gen.within(dest, 25, min(self.ac()["range"] * 0.4, 160)) or \
+            gen.within(dest, 8, min(self.ac()["range"] * 0.7, 250))
+        if not deps:
+            messagebox.showinfo("Fly into it", f"Nothing within range of {dest['id']} to start from.")
+            return
+        dep = deps[rng.randrange(len(deps))]
+        wx = xp_hazard.build(k, core, rng)
+        if want["windy"]:
+            wx.wind_dir = self._across_runway(dest, rng)
+        month = rng.choice([11, 0, 1, 2] if want["cold"] else
+                           [5, 6, 7] if k in ("ts", "hot") else list(range(12)))
+        notes = [f"The exercise: {h['practise']}",
+                 f"The weather: {h['what']}"] + xp_hazard.analyse(wx, dest["elev"], self.ac(), dest, core)
+        idea = core.Idea("realwx", f"Inclement: {h['name']} at {dest['id']}", [dep, dest],
+                         f"Fly from {dep['id']} {dep['name']} into {dest['id']} {dest['name']} with "
+                         f"{h['what'].lower()} waiting for you. {h['practise']}",
+                         month=month, tod=rng.choice(["morning", "midday", "afternoon"]),
+                         wx=wx, wx_at=dest, notes=notes,
+                         ifr=bool(wx.flight_rules() in ("IFR", "LIFR")))
+        self._add_idea(idea)
+        self.sync_wx_to_idea(idea)
+        self.l_haz.config(text=f"{h['name']} at {dest['id']}")
+        self.log(f"Inclement weather flight: {idea.title}")
+        self.nb.select(1 if setup else 0)
+
+    def _across_runway(self, apt, rng):
+        """A wind direction that puts the wind across the best runway here."""
+        ends = core.runway_ends(apt)
+        if not ends:
+            return rng.randrange(0, 360, 10)
+        hdg = ends[0][1]
+        return int((hdg + rng.choice([80, 90, 100, 260, 270, 280])) % 360)
+
+    def sync_wx_to_idea(self, idea):
+        """Put an idea's weather into the workshop boxes."""
+        w = idea.wx
+        self.sky_names = {w.sky_text: "metar", **{v[0]: k for k, v in core.SKY.items()}} \
+            if w.custom else {v[0]: k for k, v in core.SKY.items()}
+        if hasattr(self, "cb_sky"):
+            self.cb_sky["values"] = list(self.sky_names)
+        self.v_sky.set(w.sky_text)
+        self.v_vis.set(f"{w.vis:g}")
+        self.set_ceil_box(w.ceiling)
+        self.v_temp.set(str(w.temp))
+        self.v_wdir.set(str(w.wind_dir))
+        self.v_wspd.set(str(w.wind_spd))
+        self.v_gust.set(str(w.gust))
+        t, sh = w.turbulence(), w.shear_deg()
+        for i in range(3):
+            self.v_turb[i].set(min(self.TURB_VALUE, key=lambda kk: abs(self.TURB_VALUE[kk] - t[i])))
+            self.v_shear[i].set(str(sh[i]))
 
     # ======================================================================
     # Approach practice
@@ -3427,6 +3792,10 @@ class App(tk.Tk):
             if self.v_wxmode.get() == "real" and getattr(self, "_auto_live", False):
                 self.v_wxmode.set("mission")
         self._auto_live = idea.live
+        if self.v_layers_on.get():
+            # hand-built layers are for the flight you built them on, not every flight after it
+            self.v_layers_on.set(False)
+        self._hazard_wx = wx if wx.custom else None
         self.v_wdir.set(str(wx.wind_dir))
         self.v_wspd.set(str(wx.wind_spd))
         self.v_gust.set(str(wx.gust))
@@ -3450,21 +3819,41 @@ class App(tk.Tk):
         self.update_fms_label()
         self.update_there_label()
 
-    def cur_wx(self):
+    def cur_wx(self, raw=False):
+        """The weather in the boxes. raw=True skips the hand-built layers, to read the preset."""
         sky = self.sky_names.get(self.v_sky.get(), "clear")
         extra = ()
-        if sky == "metar" and self.idea and self.idea.wx.custom:
-            iw = self.idea.wx
-            extra = (iw.layers, iw.sky_text, iw.precip)
-        elif sky == "metar":
-            sky = "clear"
+        if sky == "metar":
+            src = getattr(self, "_hazard_wx", None)
+            if src is not None and src.sky_text == self.v_sky.get():
+                extra = (src.layers, src.sky_text, src.precip)
+            elif self.idea and self.idea.wx.custom:
+                iw = self.idea.wx
+                extra = (iw.layers, iw.sky_text, iw.precip)
+            else:
+                sky = "clear"
         w = core.Wx(sky, self.num(self.v_wdir, 0), self.num(self.v_wspd, 0), self.num(self.v_gust, 0),
                     self.num(self.v_temp, 15), self.num(self.v_alt, 29.92),
                     self.num(self.v_vis, 10 if extra else core.SKY[sky][2]), *extra)
         w.set_vis(self.num(self.v_vis, w.vis))
-        ceil = self.ceil_value()
-        if ceil != w.ceiling:
-            w.set_ceiling(ceil)
+        hand = None if raw else self.wx_layers()
+        if hand:
+            keep = w.precip                       # read it while it is still a preset
+            w._layers, w.custom, w.sky = list(hand), True, "metar"
+            w._precip = keep
+            w._text = core.sky_phrase(hand, w.vis)
+        else:
+            ceil = self.ceil_value()
+            if ceil != w.ceiling:
+                w.set_ceiling(ceil)
+        if not raw:
+            t = [self.TURB_VALUE.get(v.get()) for v in self.v_turb]
+            if any(x is not None for x in t):
+                auto = w.turbulence()
+                w.turb = [auto[i] if t[i] is None else t[i] for i in range(3)]
+            sh = [int(self.num(v, 0)) for v in self.v_shear]
+            if any(sh):
+                w.shear = sh
         return w
 
     def refresh_dep(self):

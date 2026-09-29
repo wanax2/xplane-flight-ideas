@@ -39,7 +39,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from xp_wx import CONTINENTS, in_area   # noqa: E402  (lat/lon boxes for continents)
 
-VERSION = "6.3"
+VERSION = "6.4"
 CACHE_DIR = Path.home() / ".xp_flight_ideas"
 CACHE_FORMAT = 9
 
@@ -459,6 +459,10 @@ class Wx:
         self.wind_text = ""   # filled in by the generator (favoured runway etc.)
         self.extra = ""
         self.metar = None     # raw METAR text when built from live weather
+        # Three wind layers: surface, mid, high. None means "work it out from the gust",
+        # which is what every preset did before these could be set by hand.
+        self.turb = None      # [0..1, 0..1, 0..1]  turbulence ratio per layer
+        self.shear = None     # [deg, deg, deg]     how far the wind swings in each layer
 
     @property
     def layers(self):
@@ -526,6 +530,8 @@ class Wx:
                *((self._layers, self._text, self._precip) if self.custom else ()))
         w.wind_text, w.extra, w.metar = self.wind_text, self.extra, self.metar
         w.station = getattr(self, "station", None)
+        w.turb = list(self.turb) if self.turb else None
+        w.shear = list(self.shear) if self.shear else None
         return w
 
     def wind_str(self):
@@ -543,23 +549,45 @@ class Wx:
         return (f"{txt}, {self.temp} C, altimeter {self.altimeter:.2f}, "
                 f"{self.wind_text or self.wind_str()}{self.extra}{tag}")
 
+    def turbulence(self):
+        """Turbulence ratio for each of the three wind layers, 0 to 1."""
+        if self.turb:
+            return [max(0.0, min(1.0, float(x))) for x in (list(self.turb) + [0.0, 0.0, 0.0])[:3]]
+        base = min(1.0, 0.05 + self.gust / 40)           # the old behaviour
+        return [base, base / 2, 0.05]
+
+    def shear_deg(self):
+        """How far the wind swings within each layer, in degrees."""
+        if self.shear:
+            return [max(0, min(180, int(x))) for x in (list(self.shear) + [0, 0, 0])[:3]]
+        return [0, 0, 0]
+
+    def freezing_level(self, elev_ft=0):
+        """Height AMSL where it hits 0 C, from the surface temperature and the standard lapse rate.
+
+        Below the field elevation it comes back negative, which is the honest answer:
+        everything, including the ground, is below freezing.
+        """
+        return int(round(elev_ft + self.temp / 1.98 * 1000))
+
     def to_xplane(self, lat, lon, elev_ft):
         """X-Plane 12.4 flight-initialization 'weather' object (custom definition)."""
         layers, precip = self.layers, self.precip
         xp_type = {"cumulonimbus": "cumulunimbus"}   # X-Plane's spelling
         clouds = [{"type": xp_type.get(t, t), "cover_ratio": c, "bases_in_feet_msl": int(elev_ft + b),
                    "tops_in_feet_msl": int(elev_ft + b + th)} for t, c, b, th in layers][:3]
-        turb = min(1.0, 0.05 + self.gust / 40)
+        t = self.turbulence()
+        sh = self.shear_deg()
         winds = [
             {"altitude_in_feet_msl": int(elev_ft + 500), "speed_in_knots": self.wind_spd,
              "direction_in_degrees_true": self.wind_dir, "gust_increase_in_knots": self.gust,
-             "shear_in_degrees": 0, "turbulence_ratio": round(turb, 2)},
+             "shear_in_degrees": int(sh[0]), "turbulence_ratio": round(t[0], 2)},
             {"altitude_in_feet_msl": int(elev_ft + 3500), "speed_in_knots": int(self.wind_spd * 1.25 + 4),
              "direction_in_degrees_true": (self.wind_dir + 15) % 360, "gust_increase_in_knots": 0,
-             "shear_in_degrees": 0, "turbulence_ratio": round(turb / 2, 2)},
+             "shear_in_degrees": int(sh[1]), "turbulence_ratio": round(t[1], 2)},
             {"altitude_in_feet_msl": int(max(elev_ft + 7000, 10000)), "speed_in_knots": int(self.wind_spd * 1.5 + 8),
              "direction_in_degrees_true": (self.wind_dir + 30) % 360, "gust_increase_in_knots": 0,
-             "shear_in_degrees": 0, "turbulence_ratio": 0.05},
+             "shear_in_degrees": int(sh[2]), "turbulence_ratio": round(t[2], 2)},
         ]
         return {"definition": {
             "latitude_in_degrees": lat, "longitude_in_degrees": lon,
