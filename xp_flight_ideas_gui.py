@@ -1932,15 +1932,33 @@ class App(tk.Tk):
     # ======================================================================
     # Approach practice
     # ======================================================================
-    APPR_WX = [("leave", "Leave X-Plane's weather alone"),
-               ("clear", "Clear day - just the landing"),
-               ("low", "Low: 800 ft overcast, 3 SM"),
-               ("mins", "Right at minimums - 200 ft and half a mile"),
-               ("real", "Real weather where I'm flying")]
+    APPR_WX_FIXED = [("leave", "Leave X-Plane's weather alone"),
+                     ("clear", "Clear day - just the landing"),
+                     ("low", "Low: 800 ft overcast, 3 SM"),
+                     ("mins", "Right at minimums - 200 ft and half a mile"),
+                     ("built", "The weather I built on 'Build it'"),
+                     ("metar", "Real weather here right now (live METAR)"),
+                     ("real", "X-Plane's own real weather")]
 
-    def approach_wx(self, key=None):
+    @property
+    def APPR_WX(self):
+        """The fixed choices, then every hazard, as (key, label) pairs."""
+        return self.APPR_WX_FIXED + [("haz:" + k, "Hazard: " + h["name"])
+                                     for k, h in xp_hazard.HAZARDS.items()]
+
+    def approach_wx(self, key=None, ident=None):
         """The weather an approach will be flown in, as a Wx we can also describe."""
         key = key or (self.v_apwx.get() if hasattr(self, "v_apwx") else "clear")
+        if key.startswith("haz:"):
+            return xp_hazard.build(key[4:], core, random.Random())
+        if key == "built":
+            return self.cur_wx()
+        if key == "metar":
+            o = self.metar_for(ident or (self.v_apid.get().strip().upper()
+                                         if hasattr(self, "v_apid") else ""))
+            if o:
+                return livewx.to_wx(o, core)
+            return core.Wx(sky="clear", wind_dir=0, wind_spd=0)
         if key == "mins":
             return core.Wx(sky="vv2", wind_dir=0, wind_spd=4)
         if key == "low":
@@ -1948,6 +1966,17 @@ class App(tk.Tk):
         if key in ("leave", "real") and self.idea:
             return self.cur_wx()
         return core.Wx(sky="clear", wind_dir=0, wind_spd=0)
+
+    def metar_for(self, ident):
+        """The live observation for an airport, if we have one downloaded."""
+        ident = (ident or "").strip().upper()
+        if not ident:
+            return None
+        try:
+            obs = self.metar_src.obs or []
+        except Exception:
+            return None
+        return next((o for o in obs if (o.get("id") or "").upper() == ident), None)
 
     def approach_window(self, ident=None):
         """Put the aeroplane on final anywhere, over and over, without a flight plan."""
@@ -2002,7 +2031,7 @@ class App(tk.Tk):
             ttk.Button(g, text=lbl, style="Quiet.TButton",
                        command=lambda n=nm: self.v_apnm.set(str(n))).pack(side="left", padx=2)
         ttk.Label(g, text="   Weather:").pack(side="left")
-        ttk.Combobox(g, textvariable=self.v_apwx, state="readonly", width=34,
+        ttk.Combobox(g, textvariable=self.v_apwx, state="readonly", width=40,
                      values=[t for _, t in self.APPR_WX]).pack(side="left", padx=4)
 
         self.ap_txt = ScrolledText(win, wrap="word", height=9, font=MONO)
@@ -2094,6 +2123,19 @@ class App(tk.Tk):
             except Exception:
                 perf = None
         lines = xp_approach.brief(a, opt, nm, ac, wx, core, perf)
+        key = self.ap_wx_key()
+        if key == "metar" and not self.metar_for(a["id"]):
+            lines.insert(0, f"No live report for {a['id']} - press 'Refresh weather' on "
+                            f"Weather > Real weather now first. Using a clear day instead.")
+        elif key == "metar":
+            lines.insert(0, f"Weather: the live METAR at {a['id']}.")
+        elif key == "built":
+            lines.insert(0, "Weather: whatever you have built on the 'Build it' tab.")
+        elif key.startswith("haz:"):
+            h = xp_hazard.HAZARDS[key[4:]]
+            lines.insert(0, f"Weather: {h['name']} - {h['what']}")
+        lines.append("")
+        lines += [L for L in xp_hazard.analyse(wx, a["elev"], ac)[1:] if L]
         lines.append("")
         lines.append(xp_approach.intercept_hint(nm))
         lines.append("")
@@ -2612,6 +2654,8 @@ class App(tk.Tk):
                    command=lambda: self.wx_make_idea(False, use_nearby=True)).pack(side="left")
         ttk.Button(nb2, text="Take off IN it, land here >>",
                    command=lambda: self.wx_make_idea(True, use_nearby=True)).pack(side="left", padx=4)
+        ttk.Button(nb2, text="Approach into it...", style="Quiet.TButton",
+                   command=self.approach_into_weather).pack(side="left", padx=4)
         self.near_list = []
         self.wx_cv.bind("<Configure>", lambda e: self.debounce("wxmap", self.draw_wx_map, 150))
         body.add(lf, weight=3)
@@ -2840,6 +2884,19 @@ class App(tk.Tk):
         rad = self.num(self.v_wxrad, 300) if home else 300
         pics.draw_wx_map(self.wx_cv, self.metar_src.obs, self.wx_results, center=home, radius_nm=rad,
                          selected=self.wx_sel, home=home)
+
+    def approach_into_weather(self):
+        """Straight from the live-weather list onto final there, in that weather."""
+        r = self.wx_sel
+        if not r:
+            messagebox.showinfo("Live weather", "Pick an airport in the list first.")
+            return
+        apt = r["apt"]
+        self.approach_window(apt["id"])
+        label = next((t for k, t in self.APPR_WX if k == "metar"), None)
+        if label:
+            self.v_apwx.set(label)
+        self.log(f"Approach into the live weather at {apt['id']}.")
 
     def wx_make_idea(self, depart_here, use_nearby=False):
         r = self.wx_sel

@@ -1,4 +1,4 @@
-X-PLANE FLIGHT IDEAS  v6.4
+X-PLANE FLIGHT IDEAS  v6.5
 ========================
 
 Files
@@ -273,14 +273,21 @@ tick "Add Python to PATH" during install). Nothing else to install.
      and the head and crosswind components on each end.
    - Distance: anything from 1 to 20 nm, with four shortcuts - Short final (2),
      4 nm, Glideslope (6) and Intercept (10).
-   - Weather: leave X-Plane's alone, a clear day, 800 ft and 3 miles, right at
-     minimums (200 ft and half a mile), or real weather.
+   - Weather (v6.5): leave X-Plane's alone, a clear day, 800 ft and 3 miles,
+     right at minimums, the weather you built on Weather > Build it, the live
+     METAR at that airport right now, X-Plane's own real weather, or any of the
+     thirteen hazards - freezing rain into Aspen, a thunderstorm at Boston, fog
+     anywhere. Whatever you pick, the runway is chosen again for that wind and
+     the briefing adds the icing, turbulence and shear you'd meet coming down.
    - Before you press anything it tells you what you're being dropped into: the
      height you'll appear at and what the altimeter will read, the rate of
      descent and speed to hold, time to the threshold, the wind on the runway,
      the localizer frequency and course, the usual minimums for that kind of
      approach, whether the runway is long enough for your aeroplane, and whether
      you will actually see the runway in that weather.
+   - Weather > Real weather now has an "Approach into it..." button: take any
+     airport the live search found and go straight onto final there, in the
+     weather it is actually reporting.
    - Leave the window open. "Put me on final" works over and over, so you can
      fly the same approach ten times in a row.
    - "Back to final" on Fly it > In flight repeats the last approach exactly -
@@ -588,6 +595,15 @@ WHERE THE ONLINE DATA COMES FROM
    opentopodata.org             terrain elevations
    All of them are optional. The app works with no internet at all - it just
    uses your own X-Plane scenery instead.
+
+
+WHAT'S NEW IN 6.5
+   - An approach can be flown into any weather you like: the live METAR at that
+     airport, the conditions you built yourself, or one of the thirteen hazards.
+     The runway is chosen for that wind, and the briefing adds the icing,
+     turbulence and shear for those conditions.
+   - "Approach into it..." on Weather > Real weather now takes any airport the
+     live search turned up and sets up the approach into its reported weather.
 
 
 WHAT'S NEW IN 6.4
