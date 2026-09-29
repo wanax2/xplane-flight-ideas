@@ -287,9 +287,21 @@ class FlightGrader(threading.Thread):
         planned = [a["id"] for a in self.idea.stops] if self.idea else []
         arrived = bool(lands) and planned and lands[-1].get("airport") == planned[-1]
         score = round(0.7 * avg + 0.2 * smooth + (10 if arrived else 0)) if lands else 0
+        # the conditions it was flown in, so the coach has something to read later
+        wx = getattr(self.idea, "wx", None)
+        cond = {}
+        if wx is not None:
+            try:
+                cond = {"rules": wx.flight_rules(), "vis": round(float(wx.vis), 2),
+                        "ceiling": wx.ceiling, "wind_kt": int(wx.wind_spd), "gust_kt": int(wx.gust),
+                        "temp": int(wx.temp)}
+            except Exception:
+                cond = {}
+        cond["night"] = getattr(self.idea, "tod", "") == "night"
+        cond["ifr"] = bool(getattr(self.idea, "ifr", False))
         self.entry = {
             "title": self.idea.title if self.idea else "Free flight",
-            "kind": getattr(self.idea, "kind", ""), "aircraft": self.acname,
+            "kind": getattr(self.idea, "kind", ""), "aircraft": self.acname, **cond,
             "route": planned, "flown_to": [l.get("airport") for l in lands if l.get("airport")],
             "distance_nm": round(self.dist_nm, 1), "minutes": round(mins, 1), "landings": lands,
             "max_bank": round(self.max_bank), "max_g": round(self.max_g, 2), "arrived": arrived,

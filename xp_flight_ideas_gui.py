@@ -50,6 +50,9 @@ import xp_wonders as wonders            # noqa: E402
 import xp_approach                     # noqa: E402
 import xp_hazard                       # noqa: E402
 import xp_avionics                     # noqa: E402
+import xp_coach                        # noqa: E402
+import xp_checkride                    # noqa: E402
+import xp_fleet                        # noqa: E402
 import xp_acf                           # noqa: E402
 import xp_score                         # noqa: E402
 import xp_export as exp                 # noqa: E402
@@ -454,6 +457,19 @@ class App(tk.Tk):
                                     values=[AUTO_PROF] + [p["name"] for p in core.AIRCRAFT.values()])
         self.cb_prof.grid(row=2, column=1, sticky="ew")
         self.cb_prof.bind("<<ComboboxSelected>>", lambda e: self.on_profile())
+        self.v_continue = tk.BooleanVar(value=c.get("continue_here", False))
+        cr = ttk.Frame(g)
+        cr.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        ttk.Checkbutton(cr, text="Continue from where I left it", variable=self.v_continue,
+                        command=self.apply_continue).pack(side="left")
+        fr = ttk.Frame(g)
+        fr.grid(row=6, column=0, columnspan=2, sticky="ew")
+        ttk.Button(fr, text="My aeroplanes...", style="Quiet.TButton",
+                   command=self.fleet_window).pack(side="right", anchor="n")
+        self.l_fleet = ttk.Label(fr, text="", style="Muted.TLabel",
+                                 wraplength=self.theme.px(210), justify="left")
+        self.l_fleet.pack(side="left", fill="x", expand=True)
+
         pr = ttk.Frame(g)
         pr.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(6, 0))
         self.l_perf = ttk.Label(pr, text="", style="Muted.TLabel",
@@ -724,6 +740,14 @@ class App(tk.Tk):
 
         # --- Progress: what I've flown ---
         prog = self._group(nb, "Progress")
+        tco = ttk.Frame(prog, padding=6)
+        prog.add(tco, text="Coach")
+        self._build_coach(tco)
+        self.tab_coach = self._home_of(tco, nb, prog)
+        tck = ttk.Frame(prog, padding=6)
+        prog.add(tck, text="Checkride")
+        self._build_checkride(tck)
+        self.tab_ck = self._home_of(tck, nb, prog)
         t9 = ttk.Frame(prog, padding=6)
         prog.add(t9, text="Career")
         self._build_career(t9)
@@ -1230,6 +1254,7 @@ class App(tk.Tk):
             wx_area=self.v_wxarea.get(), wx_min=self.num(self.v_wxmin, 2), wx_goto=self.v_wxgoto.get(),
             sc_famous=self.v_scfam.get(), sc_gems=self.v_scgem.get(), sc_area=self.v_scarea.get(),
             sc_wonders=self.v_scwon.get(), sc_random=self.v_scrnd.get(),
+            continue_here=self.v_continue.get(), ck_std=self.ck_std(),
             sc_tags=[k for k, v in self.v_sctags.items() if v.get()], sc_n=int(self.num(self.v_scn, 12)),
             insim=self.v_insim.get(), speak=self.v_speak.get(), knee=self.v_knee.get(),
             surprise=self.v_surprise.get(), sur_lo=self.num(self.v_sur_lo, 10), sur_hi=self.num(self.v_sur_hi, 40),
@@ -1312,6 +1337,10 @@ class App(tk.Tk):
         self.update_plugin_label()
         self.update_fms_label()
         self.update_rules_label()
+        try:
+            self.fill_coach()
+        except Exception as e:
+            self.log(f"Coach: {e}")
         self.v_status.set("Ready - pick your settings and press Generate ideas.")
 
     # ======================================================================
@@ -1572,6 +1601,408 @@ class App(tk.Tk):
             self.open_picker()
         ttk.Button(t2, text="Show me one of these airports", style="Big.TButton",
                    command=fly_it).pack(anchor="e", pady=(6, 0))
+
+    # ======================================================================
+    # The fleet: aeroplanes stay where you leave them
+    # ======================================================================
+    def fleet(self):
+        if not hasattr(self, "_fleet"):
+            self._fleet = xp_fleet.Fleet(core.CACHE_DIR / "fleet.json")
+        return self._fleet
+
+    def update_fleet_label(self):
+        if not hasattr(self, "l_fleet"):
+            return
+        acf = self.selected_acf()
+        self.l_fleet.config(text=self.fleet().line(acf) if acf else "")
+
+    def apply_continue(self):
+        """When the switch is on, the next flight starts where this aeroplane is."""
+        self.save_cfg()
+        if not self.v_continue.get():
+            return
+        acf = self.selected_acf()
+        at = self.fleet().where(acf) if acf else None
+        if at:
+            self.v_from.set(at)
+            self.log(f"Continuing from {at} - that is where you left this aeroplane.")
+        else:
+            self.log("This aeroplane has no history yet, so the next flight starts wherever you like. "
+                     "Fly one with scoring on and it will be remembered.")
+
+    def fleet_window(self):
+        f = self.fleet()
+        win = tk.Toplevel(self)
+        win.title("My aeroplanes")
+        win.geometry(f"{self.theme.px(700)}x{self.theme.px(420)}")
+        win.transient(self)
+        self.theme.track(win, "window")
+        head = ttk.Frame(win, style="Bg.TFrame", padding=(12, 10, 12, 4))
+        head.pack(fill="x")
+        ttk.Label(head, text="My aeroplanes", style="Head.TLabel").pack(side="left")
+        ttk.Label(head, text="   where each one is, and what it has done",
+                  style="MutedBg.TLabel").pack(side="left")
+        body = ttk.Frame(win, padding=(10, 6))
+        body.pack(fill="both", expand=True)
+        cols = ("plane", "at", "hours", "landings", "last")
+        tv = ttk.Treeview(body, columns=cols, show="headings", selectmode="browse")
+        for col, h, w in zip(cols, ("Aeroplane", "Is at", "Hours", "Landings", "Last flown"),
+                             (250, 70, 70, 80, 120)):
+            tv.heading(col, text=h)
+            tv.column(col, width=w, anchor="w" if col == "plane" else "center", stretch=col == "plane")
+        self.theme.fit_columns(tv)
+        tv.pack(fill="both", expand=True)
+        rows = f.all()
+        for k, p in rows:
+            last = p.get("last")
+            when = time.strftime("%Y-%m-%d", time.localtime(last)) if last else "-"
+            tv.insert("", "end", values=(p.get("name") or Path(k).stem, p.get("at") or "-",
+                                         f"{p.get('hours', 0):.1f}", p.get("landings", 0), when))
+        if not rows:
+            ttk.Label(body, text="Nothing here yet. Fly with scoring switched on and your aeroplanes "
+                                 "start remembering where they are.",
+                      style="Muted.TLabel").pack(anchor="w", pady=6)
+
+        def fly_from():
+            sel = tv.selection()
+            if not sel:
+                return
+            at = tv.item(sel[0], "values")[1]
+            if at and at != "-":
+                self.v_from.set(at)
+                self.log(f"Departure set to {at}.")
+            win.destroy()
+
+        b = ttk.Frame(win, style="Bg.TFrame", padding=(12, 4, 12, 12))
+        b.pack(fill="x")
+        ttk.Button(b, text="Fly from there", style="Big.TButton", command=fly_from).pack(side="left")
+        ttk.Button(b, text="Close", style="Quiet.TButton",
+                   command=lambda: (self.theme.forget(win), win.destroy())).pack(side="right")
+
+    # ======================================================================
+    # The coach
+    # ======================================================================
+    def _build_coach(self, f):
+        head = ttk.Frame(f)
+        head.pack(fill="x")
+        ttk.Label(head, text="What your logbook says", style="Head.TLabel").pack(side="left")
+        ttk.Button(head, text="Look again", style="Quiet.TButton",
+                   command=self.fill_coach).pack(side="right")
+        self.l_coach = ttk.Label(f, text="", style="Muted.TLabel")
+        self.l_coach.pack(anchor="w", pady=(0, 6))
+
+        body = ttk.PanedWindow(f, orient="horizontal")
+        body.pack(fill="both", expand=True)
+        lf = ttk.Frame(body)
+        rf = ttk.Frame(body, padding=(8, 0, 0, 0))
+        body.add(lf, weight=3)
+        body.add(rf, weight=2)
+
+        cols = ("what", "why")
+        tv = ttk.Treeview(lf, columns=cols, show="headings", selectmode="browse")
+        for col, h, w in zip(cols, ("Worth practising", "Because"), (250, 420)):
+            tv.heading(col, text=h)
+            tv.column(col, width=w, anchor="w", stretch=col == "why")
+        self.theme.fit_columns(tv)
+        sb = ttk.Scrollbar(lf, orient="vertical", command=tv.yview)
+        tv.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        tv.pack(fill="both", expand=True)
+        tv.bind("<<TreeviewSelect>>", lambda e: self.coach_detail())
+        tv.bind("<Double-1>", lambda e: self.coach_fly())
+        self.tv_coach = tv
+        self.coach_items = []
+
+        ttk.Label(rf, text="Currency", style="Head.TLabel").pack(anchor="w")
+        self.coach_cur = ScrolledText(rf, wrap="word", height=6, font=MONO)
+        self.theme.track(self.coach_cur, "text")
+        self.coach_cur.pack(fill="x")
+        self.coach_cur.config(state="disabled")
+        ttk.Label(rf, text="The FAA's rolling rules, as a scoreboard. Nothing here counts for anything real.",
+                  style="Muted.TLabel", wraplength=self.theme.px(330), justify="left").pack(anchor="w",
+                                                                                            pady=(2, 8))
+        ttk.Label(rf, text="Detail", style="Head.TLabel").pack(anchor="w")
+        self.coach_txt = ScrolledText(rf, wrap="word", height=8, font=MONO)
+        self.theme.track(self.coach_txt, "text")
+        self.coach_txt.pack(fill="both", expand=True)
+        self.coach_txt.config(state="disabled")
+
+        b = ttk.Frame(f)
+        b.pack(fill="x", pady=(6, 0))
+        ttk.Button(b, text="Build me that flight", style="Big.TButton",
+                   command=self.coach_fly).pack(side="left")
+        ttk.Label(b, text="  Pick a line first. Double-click does the same thing.",
+                  style="Muted.TLabel").pack(side="left")
+
+    def fill_coach(self):
+        """Re-read the logbook and show what it says."""
+        if not hasattr(self, "tv_coach"):
+            return
+        entries = list(self.logbook.entries)
+        self.l_coach.config(text=xp_coach.summary(entries))
+        self.set_text(self.coach_cur, "\n".join(xp_coach.currency_lines(entries)))
+        names = {k: core.MISSION_NAMES.get(k, k) for k in core.MISSIONS
+                 if k not in core.NOT_GENERATED}
+        self.coach_items = xp_coach.findings(entries, missions=names)
+        self.tv_coach.delete(*self.tv_coach.get_children())
+        for i, fd in enumerate(self.coach_items):
+            self.tv_coach.insert("", "end", iid=str(i),
+                                 values=(fd["title"], fd["detail"][:110] + ("..." if len(fd["detail"]) > 110 else "")))
+        if self.coach_items:
+            self.tv_coach.selection_set("0")
+            self.coach_detail()
+
+    def coach_pick(self):
+        sel = self.tv_coach.selection()
+        return self.coach_items[int(sel[0])] if sel and self.coach_items else None
+
+    def coach_detail(self):
+        fd = self.coach_pick()
+        if not fd:
+            return
+        fix = fd["fix"]
+        what = ("a crosswind flight" if fix.get("hazard") == "xwind" else
+                "a low-IFR flight" if fix.get("hazard") == "lowifr" else
+                "an approach to practise" if fix.get("approach") else
+                "somewhere you've never been" if fix.get("anywhere") else
+                core.MISSION_NAMES.get(fix.get("mission", ""), "a flight"))
+        self.set_text(self.coach_txt, f"{fd['title']}\n\n{fd['detail']}\n\n"
+                                      f"'Build me that flight' sets up {what}"
+                                      + (f" from {fix['airport']}" if fix.get("airport") else "") + ".")
+
+    def coach_fly(self):
+        """Turn a finding into an actual flight."""
+        fd = self.coach_pick()
+        if not fd:
+            messagebox.showinfo("Coach", "Pick one of the lines first.")
+            return
+        fix = fd["fix"]
+        if fix.get("airport"):
+            self.v_from.set(fix["airport"])
+        if fix.get("approach"):
+            self.approach_window(fix.get("airport"))
+            return
+        if fix.get("anywhere"):
+            self.anywhere()
+            return
+        if fix.get("hazard"):
+            self.goto(self.tab_wxfly)
+            try:
+                self.tv_haz.selection_set(fix["hazard"])
+                self.haz_generate(False)
+            except Exception as e:
+                self.log(f"Coach: {e}")
+            return
+        m = fix.get("mission")
+        if m and m in self.v_miss:
+            self.set_missions([m])
+            self.update_miss_label()
+            self.generate()
+            self.nb.select(0)
+            self.log(f"Coach: generating {core.MISSION_NAMES.get(m, m)} flights.")
+
+    # ======================================================================
+    # Checkride: manoeuvres, watched while you fly them
+    # ======================================================================
+    CK_STD_NAMES = {xp_checkride.STANDARDS[k]["name"]: k for k in xp_checkride.STANDARDS}
+
+    def rides(self):
+        if not hasattr(self, "_rides"):
+            self._rides = xp_checkride.Rides(core.CACHE_DIR / "checkrides.json")
+        return self._rides
+
+    def ck_std(self):
+        v = getattr(self, "v_ckstd", None)
+        return self.CK_STD_NAMES.get(v.get(), "private") if v is not None else "private"
+
+    def _build_checkride(self, f):
+        c = core.load_config()
+        head = ttk.Frame(f)
+        head.pack(fill="x")
+        ttk.Label(head, text="Manoeuvres, graded as you fly them", style="Head.TLabel").pack(side="left")
+        self.v_ckstd = tk.StringVar(value=xp_checkride.STANDARDS.get(
+            c.get("ck_std", "private"), xp_checkride.STANDARDS["private"])["name"])
+        ttk.Combobox(head, textvariable=self.v_ckstd, state="readonly", width=14,
+                     values=[xp_checkride.STANDARDS[k]["name"]
+                             for k in ("private", "commercial")]).pack(side="right")
+        ttk.Label(head, text="Tolerances: ", style="Muted.TLabel").pack(side="right")
+        self.v_ckstd.trace_add("write", lambda *a: (self.save_cfg(), self.ck_detail(force=True)))
+
+        self.v_cklive = tk.StringVar(value="Pick a manoeuvre, get the aeroplane into position, then start it.")
+        ttk.Label(f, textvariable=self.v_cklive, style="Muted.TLabel").pack(anchor="w", pady=(0, 6))
+
+        body = ttk.PanedWindow(f, orient="horizontal")
+        body.pack(fill="both", expand=True)
+        lf = ttk.Frame(body)
+        rf = ttk.Frame(body, padding=(8, 0, 0, 0))
+        body.add(lf, weight=2)
+        body.add(rf, weight=3)
+
+        cols = ("man", "best", "last", "n")
+        tv = ttk.Treeview(lf, columns=cols, show="headings", selectmode="browse")
+        for col, h, w in zip(cols, ("Manoeuvre", "Best", "Last", "Flown"), (190, 52, 52, 72)):
+            tv.heading(col, text=h)
+            tv.column(col, width=w, anchor="w" if col == "man" else "e", stretch=col == "man")
+        self.theme.fit_columns(tv)
+        sb = ttk.Scrollbar(lf, orient="vertical", command=tv.yview)
+        tv.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        tv.pack(fill="both", expand=True)
+        tv.bind("<<TreeviewSelect>>", lambda e: self.ck_detail())
+        tv.bind("<Double-1>", lambda e: self.ck_start())
+        self.tv_ck = tv
+
+        self.ck_card = ScrolledText(rf, wrap="word", height=18, font=MONO)
+        self.theme.track(self.ck_card, "text")
+        self.ck_card.pack(fill="both", expand=True)
+        self.ck_card.config(state="disabled")
+
+        b = ttk.Frame(f)
+        b.pack(fill="x", pady=(6, 0))
+        self.b_ckgo = ttk.Button(b, text="Start this manoeuvre", style="Big.TButton", command=self.ck_start)
+        self.b_ckgo.pack(side="left")
+        ttk.Button(b, text="Stop", style="Quiet.TButton", command=self.ck_stop).pack(side="left", padx=(4, 0))
+        ttk.Button(b, text="Fly the whole ride", style="Quiet.TButton",
+                   command=self.ck_ride).pack(side="left", padx=(12, 0))
+        ttk.Button(b, text="Copy card", style="Quiet.TButton",
+                   command=lambda: self.copy_text(self.ck_card.get("1.0", "end"))).pack(side="right")
+        ttk.Label(b, text="  Nothing here is a real checkride.", style="Muted.TLabel").pack(side="left")
+
+        self.ck_queue, self.ck_results, self.ck_watch, self.ck_riding = [], [], None, False
+        self.fill_checkride()
+
+    def fill_checkride(self):
+        """The manoeuvre list, with how you have done at each before."""
+        if not hasattr(self, "tv_ck"):
+            return
+        sel = (self.tv_ck.selection() or ("",))[0]
+        R = self.rides()
+        self.tv_ck.delete(*self.tv_ck.get_children())
+        for key in xp_checkride.RIDE:
+            t = xp_checkride.BY_KEY[key]
+            h = R.history(key, 50)
+            self.tv_ck.insert("", "end", iid=key,
+                              values=(t.name, R.best(key) or "-", h[0] if h else "-", len(h) or "-"))
+        self.tv_ck.selection_set(sel if sel in xp_checkride.BY_KEY else xp_checkride.RIDE[0])
+        self.ck_detail()
+
+    def ck_key(self):
+        sel = self.tv_ck.selection()
+        return sel[0] if sel else None
+
+    def ck_detail(self, force=False):
+        """What the selected manoeuvre asks of you, and how you've done at it.
+
+        It leaves a grade card alone: `_ck_shown` is what the box is already
+        showing, so re-selecting a row after a manoeuvre doesn't wipe the result.
+        """
+        key = self.ck_key()
+        if not key or getattr(self, "ck_watch", None):
+            return
+        if not force and getattr(self, "_ck_shown", None) == key:
+            return
+        self._ck_shown = key
+        t = xp_checkride.BY_KEY[key]
+        std = xp_checkride.STANDARDS[self.ck_std()]
+        tol = (f"Altitude ±{std['alt']} ft, heading ±{std['hdg']}°, "
+               f"speed ±{std['ias']} kt.")
+        last = self.rides().last(key)
+        prev = ""
+        if last:
+            prev = (f"\n\nLast time: {last['score']}/100"
+                    + (", " + ", ".join(last["busts"]).lower() + " outside tolerance."
+                       if last.get("busts") else ", everything inside tolerance.")
+                    + f"\nAll of them: {self.rides().line(key)}")
+        self.set_text(self.ck_card,
+                      f"{t.name.upper()}\n\n{t.what}\n\nBefore you start: {t.setup}\n\n"
+                      f"{std['name']} tolerances. {tol}\n{std['why']}{prev}")
+
+    # ---- flying one -------------------------------------------------------
+    def ck_start(self, key=None):
+        if getattr(self, "ck_watch", None) and self.ck_watch.is_alive():
+            messagebox.showinfo("Checkride", "One manoeuvre at a time - stop this one first.")
+            return
+        key = key or self.ck_key()
+        if not key:
+            messagebox.showinfo("Checkride", "Pick a manoeuvre from the list first.")
+            return
+        task = xp_checkride.make(key, std=self.ck_std(), ac=self.ac())
+        self.set_text(self.ck_card, f"{task.name.upper()}\n\n{task.what}\n\nWatching. "
+                                    f"It grades itself the moment you finish.")
+        self.v_cklive.set(f"{task.name}: checking where you are...")
+        self.b_ckgo.config(text="Flying it...")
+        w = xp_checkride.Watcher(
+            self.api(), task,
+            on_status=lambda s: self.ui(lambda s=s: self.v_cklive.set(s)),
+            on_done=lambda r: self.ui(lambda r=r: self.ck_done(r)))
+        self.ck_watch = w
+        w.start()
+        self.log(f"Checkride: {task.name} - watching.")
+
+    def ck_stop(self):
+        w = getattr(self, "ck_watch", None)
+        self.ck_queue, self.ck_riding = [], False
+        if w and w.is_alive():
+            w.stop()
+            self.v_cklive.set("Stopped - that one is not graded or logged.")
+        else:
+            self.ck_watch = None
+            self.v_cklive.set("Nothing running.")
+            self.b_ckgo.config(text="Start this manoeuvre")
+
+    def ck_done(self, result):
+        """Back on the main thread once a manoeuvre has been graded (or given up on)."""
+        self.ck_watch = None
+        self.b_ckgo.config(text="Start this manoeuvre")
+        if not result:
+            self.ck_queue, self.ck_riding = [], False
+            self.log("Checkride: nothing graded.")
+            return
+        try:
+            self.rides().add(result, aircraft=self.ac().get("name", ""))
+        except Exception as e:
+            self.log(f"Checkride: couldn't save that - {e}")
+        if self.ck_riding:
+            self.ck_results.append(result)
+        self._ck_shown = result["key"]
+        self.fill_checkride()
+        self.set_text(self.ck_card, xp_checkride.card(result))
+        self.v_cklive.set(f"{result['name']}: {result['score']}/100, "
+                          f"{xp_checkride.verdict(result['score'])}.")
+        self.log(f"Checkride: {result['name']} {result['score']}/100"
+                 + (" - " + ", ".join(result["busts"]) + " outside tolerance." if result["busts"] else "."))
+        if self.ck_queue:
+            nxt = self.ck_queue.pop(0)
+            self._ck_shown = nxt
+            self.tv_ck.selection_set(nxt)
+            name = xp_checkride.BY_KEY[nxt].name
+            self.ck_card.config(state="normal")
+            self.ck_card.insert("end", f"\n\nNEXT: {name}. {xp_checkride.BY_KEY[nxt].setup}\n"
+                                       f"Get into position, then start it.\n")
+            self.ck_card.config(state="disabled")
+            self.v_cklive.set(f"{result['score']}/100. Next: {name} - start it when you are ready.")
+        elif self.ck_riding:
+            self.ck_riding = False
+            self.set_text(self.ck_card, xp_checkride.ride_card(self.ck_results))
+            self.v_cklive.set("Ride finished - the card is on the right.")
+            self.log("Checkride: " + xp_checkride.ride_card(self.ck_results).splitlines()[-1])
+
+    def ck_ride(self):
+        """The whole sequence, one manoeuvre at a time, in an order that flies."""
+        if getattr(self, "ck_watch", None):
+            messagebox.showinfo("Checkride", "Finish or stop the current manoeuvre first.")
+            return
+        self.ck_results, self.ck_riding = [], True
+        self.ck_queue = list(xp_checkride.RIDE[1:])
+        self.tv_ck.selection_set(xp_checkride.RIDE[0])
+        self.ck_detail(force=True)
+        names = ", ".join(xp_checkride.BY_KEY[k].name.lower() for k in xp_checkride.RIDE)
+        self.ck_card.config(state="normal")
+        self.ck_card.insert("end", f"\n\nTHE RIDE: {names}.\n\nEach one is started by you, so there is "
+                                   f"time to reposition in between. Start the first when you are ready.\n")
+        self.ck_card.config(state="disabled")
+        self.v_cklive.set(f"Checkride queued: {len(xp_checkride.RIDE)} manoeuvres. "
+                          f"First is {xp_checkride.BY_KEY[xp_checkride.RIDE[0]].name.lower()}.")
 
     # ======================================================================
     # Weather: build it
@@ -1933,6 +2364,21 @@ class App(tk.Tk):
     # ======================================================================
     # Approach practice
     # ======================================================================
+    APPR_FAIL_NONE = "Nothing - just fly it"
+    APPR_FAIL_RANDOM = "Surprise me (don't tell me which)"
+
+    def appr_fail_choices(self):
+        return ([self.APPR_FAIL_NONE, self.APPR_FAIL_RANDOM]
+                + [t for _, (t, _a) in sorted(link.EMERGENCIES.items())])
+
+    def appr_fail_key(self):
+        txt = self.v_apfail.get()
+        if txt == self.APPR_FAIL_NONE:
+            return None
+        if txt == self.APPR_FAIL_RANDOM:
+            return "?"
+        return next((k for k, (t, _a) in link.EMERGENCIES.items() if t == txt), None)
+
     APPR_TYPE = {"Auto - ILS if there is one": "auto",
                  "ILS or localizer": "ils",
                  "RNAV (GPS) straight-in": "rnav"}
@@ -1997,7 +2443,7 @@ class App(tk.Tk):
             or (self._home_ref() or {}).get("id", "")
         win = tk.Toplevel(self)
         win.title("Set up an approach")
-        win.geometry(f"{self.theme.px(760)}x{self.theme.px(730)}")
+        win.geometry(f"{self.theme.px(780)}x{self.theme.px(780)}")
         win.transient(self)
         self.theme.track(win, "window")
         head = ttk.Frame(win, style="Bg.TFrame", padding=(12, 10, 12, 4))
@@ -2019,6 +2465,7 @@ class App(tk.Tk):
         self.v_apap = tk.StringVar(value=self.cfg.get("appr_ap", "Armed, servos off"))
         self.v_aprnav = tk.StringVar(value=self.cfg.get("appr_rnav", "Straight-in fixes in the GPS"))
         self.v_apset = tk.BooleanVar(value=self.cfg.get("appr_set", True))
+        self.v_apfail = tk.StringVar(value=self.cfg.get("appr_fail", "Nothing - just fly it"))
 
         g = ttk.LabelFrame(body, text="Where", padding=(10, 8))
         g.pack(fill="x")
@@ -2063,6 +2510,12 @@ class App(tk.Tk):
                      values=list(self.APPR_RNAV)).grid(row=2, column=1, sticky="w", padx=4, pady=(2, 0))
         ttk.Label(g, text="(needs the GPS plugin)", style="Muted.TLabel").grid(
             row=2, column=2, columnspan=2, sticky="w", padx=(8, 0), pady=(2, 0))
+        ttk.Label(g, text="Broken:").grid(row=3, column=0, sticky="w", pady=(2, 0))
+        ttk.Combobox(g, textvariable=self.v_apfail, state="readonly", width=28,
+                     values=self.appr_fail_choices()).grid(row=3, column=1, sticky="w",
+                                                           padx=4, pady=(2, 0))
+        ttk.Label(g, text="fails as you appear", style="Muted.TLabel").grid(
+            row=3, column=2, columnspan=2, sticky="w", padx=(8, 0), pady=(2, 0))
         g.columnconfigure(1, weight=1)
 
         self.ap_txt = ScrolledText(win, wrap="word", height=9, font=MONO)
@@ -2116,7 +2569,7 @@ class App(tk.Tk):
             self.draw_approach(a, wx)
         self._ap_refresh = refresh
         for v in (self.v_apid, self.v_aprwy, self.v_apnm, self.v_apwx, self.v_apils,
-                  self.v_aptype, self.v_apap, self.v_aprnav, self.v_apset):
+                  self.v_aptype, self.v_apap, self.v_aprnav, self.v_apset, self.v_apfail):
             v.trace_add("write", lambda *a: self.debounce("appr", refresh, 200))
         e.bind("<Return>", lambda ev: refresh())
         refresh()
@@ -2179,6 +2632,16 @@ class App(tk.Tk):
                              f"one at 4 nm, one at 1.5 nm, then the threshold. It is not the "
                              f"published procedure - don't use it to practise a real one.")
             lines += ["(" + w + ")" for w in pl["warnings"]]
+        fk = self.appr_fail_key()
+        if fk == "?":
+            lines.append("")
+            lines.append("Something is going to break on this approach. You are not being told what, "
+                         "or when - which is the point.")
+        elif fk:
+            title, advice = link.EMERGENCIES[fk]
+            lines.append("")
+            lines.append(f"{title} - from the moment you appear, so you fly the whole approach with it. "
+                         f"{advice}")
         lines.append("")
         lines.append(xp_approach.intercept_hint(nm))
         lines.append("")
@@ -2208,7 +2671,14 @@ class App(tk.Tk):
         flight = link.build_flight(acf, None if lv == "(default)" else lv,
                                    link.runway_start(a["id"], opt["end"], nm),
                                    None, weather, True, system_time=False)
-        core.save_config(appr_nm=int(nm), appr_wx=key, appr_ils=self.v_apils.get(),
+        fail = self.appr_fail_key()
+        if fail == "?":
+            fail = random.choice(sorted(link.EMERGENCIES))
+            surprise = True
+        else:
+            surprise = False
+        core.save_config(appr_fail=self.v_apfail.get(),
+                         appr_nm=int(nm), appr_wx=key, appr_ils=self.v_apils.get(),
                          appr_type=self.v_aptype.get(), appr_ap=self.v_apap.get(),
                          appr_rnav=self.v_aprnav.get(), appr_set=self.v_apset.get(),
                          appr_last=[a["id"], opt["end"], nm, key])
@@ -2242,6 +2712,16 @@ class App(tk.Tk):
             self.log(f"On final: {label}")
             if avio:
                 self.set_avionics(api, avio)
+            if fail:
+                time.sleep(1.5 if avio else 3.0)
+                try:
+                    api.fail(fail)
+                    t, adv = link.EMERGENCIES[fail]
+                    self.log(f"Failed on the approach: {t}." + ("" if surprise else f" {adv}"))
+                    if surprise:
+                        self.ui(lambda: self.v_status.set("Something just broke. Work out what."))
+                except Exception as e:
+                    self.log(f"Couldn't arm the failure: {e}")
             self.ui(lambda: self.v_status.set(f"On final at {label} - press it again for another go."))
         threading.Thread(target=work, daemon=True).start()
 
@@ -2569,6 +3049,12 @@ class App(tk.Tk):
         if not keep_profile and self.v_prof.get() != AUTO_PROF:
             self.v_prof.set(core.AIRCRAFT[core.guess_profile(rel)]["name"])
         self.on_profile()
+        try:
+            self.update_fleet_label()
+            if self.v_continue.get():
+                self.apply_continue()
+        except Exception:
+            pass
         self.show_plane()
 
     # ======================================================================
@@ -3715,9 +4201,12 @@ class App(tk.Tk):
         self.debounce("plane", go)
 
     def copy_brief(self):
+        self.copy_text(self.txt.get("1.0", "end"), "Briefing copied to clipboard.")
+
+    def copy_text(self, text, said="Copied to clipboard."):
         self.clipboard_clear()
-        self.clipboard_append(self.txt.get("1.0", "end"))
-        self.log("Briefing copied to clipboard.")
+        self.clipboard_append(text)
+        self.log(said)
 
     def save_brief(self):
         if not self.idea:
@@ -5329,11 +5818,19 @@ class App(tk.Tk):
         self.grader = None if not save else getattr(self, "grader", None)
 
     def grade_done(self, entry):
-        self.fill_logbook()
         try:
-            self.fill_career()
-        except Exception:
-            pass
+            acf = self.selected_acf()
+            if acf:
+                self.fleet().note_flight(acf, self.ac()["name"], entry)
+                self.update_fleet_label()
+        except Exception as e:
+            self.log(f"Fleet: {e}")
+        self.fill_logbook()
+        for fn in (self.fill_career, self.fill_coach):
+            try:
+                fn()
+            except Exception:
+                pass
         self.goto(self.tab_log)
         kids = self.tv_log.get_children()
         if kids:

@@ -37,12 +37,22 @@ Python + Tkinter, no build step, no account, works offline.
 
 **Scores the flight.** It watches the landing and grades touchdown rate, distance past the threshold, centreline offset and smoothness, then writes it into a logbook with hours, miles, airports and badges, and a rating from Student to Legend.
 
+**Then reads that logbook back to you.** Not totals — patterns. The conditions you're measurably worse in, which part of your landing is letting the other two down, whether you were better a month ago, the airport you keep going back to, the kinds of flying you've quietly stopped doing. Each one stated with the numbers behind it so you can argue with it, and each with a button that builds the flight that fixes it. Alongside it, rolling currency counted the way the FAA counts it — a scoreboard, not a licence.
+
+**Grades your manoeuvres while you fly them.** Eight of them: straight and level, a climb to a level-off, a steep turn, a rate-one 180, slow flight, a power-off stall, a constant-rate descent and an emergency descent. Get into position, press start, and it watches the sim four times a second, works out when you've finished, and hands you a card — worst deviation in each thing it was measuring, against the tolerance, with a mark. Private-pilot tolerances or commercial. Fly one, or queue the whole ride.
+
+**Breaks something on the way down.** The approach can fail a system as you descend — one you pick, or a surprise that tells you only that *something* has broken and leaves you to find it.
+
+**Keeps your aeroplanes where you left them.** Fly Denver to Aspen and the aeroplane is in Aspen next time, with the hours and landings on that airframe. Switch it on and the next flight has to start from there.
+
 **And the rest.** Trips flown leg by leg, a tour builder, routes shared by other pilots from flightplandatabase.com, real traffic from the OpenSky Network, ATIS and radio calls written out, your own lat/lon landing spots, a kneeboard, terrain profiles, nav logs, GPX/KML/Little Navmap exports, a printable briefing sheet, the briefing served to your phone with a QR code, backups, and a light/dark theme.
 
 <p align="center">
   <img src="docs/screenshot-dark.png" width="48%" alt="Dark mode">
   <img src="docs/screenshot-briefing.png" width="48%" alt="Wonders of the world">
 </p>
+
+![A steep turn, graded](docs/screenshot-checkride.png)
 
 ---
 
@@ -93,6 +103,9 @@ python xp_flight_ideas.py --wonders-near KBJC        # what's worth seeing near 
 | `xp_radio.py` | ATIS, radio calls, your own landing spots |
 | `xp_images.py` | maps, airport diagrams, sky pictures, photos |
 | `xp_score.py` | landing scoring and the logbook |
+| `xp_coach.py` | reads the logbook back to you, and rolling currency |
+| `xp_checkride.py` | manoeuvres graded live against real tolerances |
+| `xp_fleet.py` | where each of your aeroplanes was left |
 | `xp_export.py` | nav logs, briefing sheets, GPX/KML/LNM, share codes |
 | `xp_career.py` | ratings, badges, challenge of the day |
 | `xp_terrain.py` | terrain along the route |
@@ -120,6 +133,7 @@ All optional; the app works with no internet at all, using only your own scenery
 
 ## Notes
 
+- The checkride grader and the currency counters are modelled on the FAA's numbers because those are the ones most people know. Nothing done in a simulator counts towards anything real.
 - Performance figures are estimates calibrated against one light aircraft's published data. They are a sanity check, not certified performance data — fly with your own margins.
 - The phone-briefing server runs only while its window is open, and while it does, anything on your network can open that page.
 - Nothing is uploaded anywhere. Settings, logbook and trips live in `.xp_flight_ideas` in your home folder, and there's a backup/restore button.

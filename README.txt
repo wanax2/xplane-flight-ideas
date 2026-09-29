@@ -1,4 +1,4 @@
-X-PLANE FLIGHT IDEAS  v6.6
+X-PLANE FLIGHT IDEAS  v6.7
 ========================
 
 Files
@@ -24,6 +24,9 @@ Files
   xp_approach.py            approach geometry, runway choice, minimums
   xp_hazard.py              icing, turbulence, shear, and 13 inclement-weather scenarios
   xp_avionics.py            tunes the radios, sets the bugs, arms the autopilot
+  xp_coach.py               reads your logbook back to you, and rolling currency
+  xp_checkride.py           manoeuvres graded live against real tolerances
+  xp_fleet.py               where each of your aeroplanes was left
   xp_radio.py               ATIS, radio calls, and your own landing spots
   xp_web.py                 the briefing for your phone, and backups
   xp_qr.py                  the QR code shown for the phone briefing
@@ -434,6 +437,7 @@ tick "Add Python to PATH" during install). Nothing else to install.
    alphabet   - land at airports A, B, C... in turn
    mail       - several stops against the clock
    checkride  - the whole practical test in one flight, graded against limits
+                (Progress > Checkride grades the individual manoeuvres live)
    poker      - five airports, five cards, best hand
    photo      - be overhead at the right height, heading and light
    organ      - urgent medical transport against a hard deadline
@@ -456,6 +460,58 @@ tick "Add Python to PATH" during install). Nothing else to install.
                 know the high ground, and set a turn-back point (v4.6)
    lowvis     - an approach down to minimums in fog or heavy haze; IFR aircraft
                 get the ILS to DH, VFR ones get a no-horizon haze flight (v4.6)
+
+   THE COACH (Progress > Coach)   (v6.7)
+   The logbook has been recording every landing for a long time and nothing
+   ever read any of it. This does. It looks for the patterns you would not
+   notice yourself - the conditions you are measurably worse in, the part of
+   the landing that is letting the other two down, whether you were better a
+   month ago, the airport you keep going back to, the kinds of flying you have
+   quietly stopped doing - and states each one with the numbers behind it, so
+   you can disagree with it. "Your landings fall apart in wind: in 14 kt or
+   more they average 69, in 6 kt or less they average 83."
+   Pick a line and press "Build me that flight" and it sets up the flight that
+   fixes it: a crosswind scenario, an approach, a night cross-country, or
+   somewhere you have never been.
+   The same tab keeps rolling currency - three landings in 90 days, three at
+   night, six instrument approaches in six months. It is modelled on the FAA's
+   rules because those are the ones most people know. It is a scoreboard.
+   Nothing you do in a simulator counts towards anything real.
+
+   CHECKRIDE (Progress > Checkride)   (v6.7)
+   Eight manoeuvres, watched and graded while you fly them:
+     straight and level      two minutes of holding everything exactly
+     climb and level off     up 1,000 ft, stopping on the number
+     steep turn              a full 360 at 45 degrees, back on your heading
+     rate-one turn           a 180 at three degrees a second
+     slow flight             30 seconds just above the stall
+     power-off stall         graded on the height the recovery costs
+     constant-rate descent   1,000 ft down at a steady 500 fpm
+     emergency descent       3,000 ft off in a hurry, speed under control
+   You put the aeroplane in position and press "Start this manoeuvre" - it
+   watches the sim's own numbers four times a second, works out when you have
+   finished, and gives you a card: worst deviation in each thing it was
+   measuring, the tolerance, and a mark. Full marks up to half tolerance, 80 at
+   tolerance, so a pass looks like 80 and anything above that is polish.
+   Tolerances are the private-pilot ones by default (altitude 100 ft, heading
+   10 degrees, speed 10 kt); switch to commercial and it halves the first two.
+   "Fly the whole ride" queues all eight in an order that flies, one at a time
+   so there is room to reposition, and gives a single card at the end. Stopping
+   a manoeuvre half way abandons it - nothing part-flown is graded or logged.
+   It refuses to start if you are on the ground or too low for what you picked.
+   Every result is kept, so the list shows your best and last at each one.
+   This is not a checkride and it is not a flight review. It is a stopwatch and
+   a ruler.
+
+   YOUR AEROPLANES STAY WHERE YOU LEFT THEM   (v6.7)
+   Every flight used to be a fresh start: fly Denver to Aspen and the aeroplane
+   was back in Denver next time. Tick "Continue from where I left it" on the
+   left and the next flight has to start where the last one in that aeroplane
+   ended. "My aeroplanes..." shows the lot - where each one is, hours, landings,
+   when you last flew it - and lets you move one or forget it.
+   Maintenance, wear and money are deliberately not modelled. This is here to
+   make a run of flights feel like one continuing thing, not to give you a
+   second job.
 
    SCORING AND LOGBOOK (Progress > Logbook)
    Tick "Score the flight and add it to the logbook" on the Fly tab. The app
@@ -620,6 +676,24 @@ WHERE THE ONLINE DATA COMES FROM
    All of them are optional. The app works with no internet at all - it just
    uses your own X-Plane scenery instead.
 
+
+WHAT'S NEW IN 6.7
+   - A coach that reads your logbook: the conditions you are worse in, the part
+     of your landing that is letting you down, whether you are improving, the
+     airports you keep returning to, and the kinds of flying you have stopped
+     doing - each with the numbers behind it, and a button that builds the
+     flight that fixes it.
+   - Rolling currency alongside it: landings, night landings and instrument
+     approaches, counted the way the FAA counts them. A scoreboard, not a
+     licence.
+   - Checkride: eight manoeuvres graded live against real tolerances, from
+     straight and level to a power-off stall and an emergency descent. Fly them
+     one at a time or queue the whole ride. Private or commercial tolerances.
+   - Failures on the approach: the approach window can break something on the
+     way down - a named failure you choose, or a surprise that tells you only
+     that something has broken and leaves you to work out what.
+   - Aeroplanes now stay where you leave them, with hours and landings per
+     airframe, and the next flight can be made to start from there.
 
 WHAT'S NEW IN 6.6
    - The approach can now set the aeroplane up, not just position it: NAV1 and

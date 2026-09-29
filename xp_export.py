@@ -171,6 +171,8 @@ def lnmpln(idea, ac):
 def share_code(idea, ac_name=""):
     import base64
     import zlib
+    if isinstance(ac_name, dict):                 # a whole profile was handed in
+        ac_name = ac_name.get("name", "")
     d = {"v": 1, "t": idea.title, "k": idea.kind, "s": [a["id"] for a in idea.stops], "m": idea.month,
          "tod": idea.tod, "h": idea._hour, "mi": idea.mission, "n": idea.notes, "tw": idea.twist,
          "ac": ac_name, "ifr": idea.ifr, "ov": sorted(idea.overfly), "pay": idea.payload_kg,
