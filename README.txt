@@ -1,4 +1,4 @@
-X-PLANE FLIGHT IDEAS  v6.5
+X-PLANE FLIGHT IDEAS  v6.6
 ========================
 
 Files
@@ -23,6 +23,7 @@ Files
   xp_perf.py                density altitude, runway lengths, fuel, weight
   xp_approach.py            approach geometry, runway choice, minimums
   xp_hazard.py              icing, turbulence, shear, and 13 inclement-weather scenarios
+  xp_avionics.py            tunes the radios, sets the bugs, arms the autopilot
   xp_radio.py               ATIS, radio calls, and your own landing spots
   xp_web.py                 the briefing for your phone, and backups
   xp_qr.py                  the QR code shown for the phone briefing
@@ -288,6 +289,29 @@ tick "Add Python to PATH" during install). Nothing else to install.
    - Weather > Real weather now has an "Approach into it..." button: take any
      airport the live search found and go straight onto final there, in the
      weather it is actually reporting.
+   - Avionics (v6.6): tick "Set the radios and the autopilot for me" and the app
+     sets the aeroplane up as well as positioning it.
+       Approach:  Auto (ILS if the runway has one, otherwise RNAV), ILS only,
+                  or RNAV only.
+       Autopilot: Radios only - nothing touched.
+                  Armed, servos off - bugs set, approach armed, flight director
+                  showing, you flying. This is the default.
+                  Flying it - servos on and coupled to the approach.
+       For RNAV:  a straight-in built in the GPS (a fix 6 nm out, one at 4, one
+                  at 1.5, then the threshold, all on the centreline at the right
+                  heights), or just the runway with no fixes.
+     What gets set: NAV1 and NAV2 to the localizer with the course in magnetic
+     degrees, COM1 to tower or CTAF, COM2 to ATIS where the scenery has one, the
+     altimeter, the altitude bug at the missed approach height, and the heading,
+     speed and vertical-speed bugs. The app reads the magnetic variation out of
+     the sim to convert the course, so the OBS matches the compass.
+     TWO LIMITS, both stated in the window:
+     - These are X-Plane's built-in avionics datarefs. Aircraft with their own
+       avionics - most G1000s and most study-level add-ons - keep their own
+       radios and will ignore some or all of it. The log says what didn't take.
+     - There is no way to load a published RNAV procedure through X-Plane's API.
+       The straight-in is built here and flies like the final segment of one. It
+       is NOT the charted procedure, and shouldn't be used to practise one.
    - Leave the window open. "Put me on final" works over and over, so you can
      fly the same approach ten times in a row.
    - "Back to final" on Fly it > In flight repeats the last approach exactly -
@@ -595,6 +619,18 @@ WHERE THE ONLINE DATA COMES FROM
    opentopodata.org             terrain elevations
    All of them are optional. The app works with no internet at all - it just
    uses your own X-Plane scenery instead.
+
+
+WHAT'S NEW IN 6.6
+   - The approach can now set the aeroplane up, not just position it: NAV1 and
+     NAV2 on the localizer with the course in magnetic, COM1 on tower or CTAF,
+     COM2 on ATIS, the altimeter, and the altitude, heading, speed and vertical
+     speed bugs. The autopilot can be left alone, armed with the servos off, or
+     coupled and flying the approach - your choice, remembered.
+   - Airports with no localizer get an RNAV straight-in built into the GPS.
+   - Radio frequencies are now read out of apt.dat, so tower, ground, ATIS and
+     CTAF are known where your scenery publishes them. That means one more
+     scenery rescan on first run.
 
 
 WHAT'S NEW IN 6.5

@@ -39,9 +39,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from xp_wx import CONTINENTS, in_area   # noqa: E402  (lat/lon boxes for continents)
 
-VERSION = "6.5"
+VERSION = "6.6"
 CACHE_DIR = Path.home() / ".xp_flight_ideas"
-CACHE_FORMAT = 9
+CACHE_FORMAT = 10
 
 # --------------------------------------------------------------------------
 # Aircraft profiles - edit or add your own.
@@ -755,11 +755,28 @@ def parse_apt_dat(path: Path, out: dict, pack=None):
                     cur["_meta"][t[0]] = " ".join(t[1:])
                 elif code in ("54", "1054"):
                     cur["tower"] = True
+                    _radio(cur, code, t, "twr")
                 elif code in ("50", "1050"):
                     cur["atis"] = True
+                    _radio(cur, code, t, "atis")
+                elif code in ("51", "1051"):
+                    _radio(cur, code, t, "ctaf")
+                elif code in ("53", "1053"):
+                    _radio(cur, code, t, "gnd")
             except (ValueError, IndexError):
                 continue
     _finish(cur, out)
+
+
+def _radio(cur, code, t, key):
+    """Row 50-59 hold 10s of kHz (11800); 1050-1059 hold kHz (118000)."""
+    try:
+        n = int(t[0])
+    except (ValueError, IndexError):
+        return
+    mhz = n / 1000.0 if code.startswith("10") else n / 100.0
+    if 108.0 <= mhz <= 137.0:
+        cur.setdefault("freqs", {}).setdefault(key, round(mhz, 3))
 
 
 def parse_navaids(path: Path):

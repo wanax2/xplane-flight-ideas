@@ -72,7 +72,12 @@ def runway_options(apt, wx, core):
         head = wspd * math.cos(ang)
         cross = abs(wspd * math.sin(ang))
         has_ils = end in ils
+        c = r.get("c") or []
+        i = r["e"].index(end) if end in r.get("e", []) else 0
+        thr = (c[0], c[1]) if (len(c) >= 4 and i == 0) else ((c[2], c[3]) if len(c) >= 4 else
+                                                             (apt["lat"], apt["lon"]))
         out.append({"end": end, "hdg": hdg, "len": r["len"], "surface": r["s"], "lit": r.get("lit"),
+                    "lat": thr[0], "lon": thr[1],
                     "head": head, "cross": cross, "ils": has_ils,
                     "freq": (info.get(end) or {}).get("freq"),
                     "course": (info.get(end) or {}).get("crs"),

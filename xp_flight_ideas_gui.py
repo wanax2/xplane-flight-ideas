@@ -49,6 +49,7 @@ import xp_scenic as scenic              # noqa: E402
 import xp_wonders as wonders            # noqa: E402
 import xp_approach                     # noqa: E402
 import xp_hazard                       # noqa: E402
+import xp_avionics                     # noqa: E402
 import xp_acf                           # noqa: E402
 import xp_score                         # noqa: E402
 import xp_export as exp                 # noqa: E402
@@ -1932,6 +1933,15 @@ class App(tk.Tk):
     # ======================================================================
     # Approach practice
     # ======================================================================
+    APPR_TYPE = {"Auto - ILS if there is one": "auto",
+                 "ILS or localizer": "ils",
+                 "RNAV (GPS) straight-in": "rnav"}
+    APPR_AP = {"Radios only": "radios",
+               "Armed, servos off": "armed",
+               "Flying it (coupled)": "coupled"}
+    APPR_RNAV = {"Straight-in fixes in the GPS": "fixes",
+                 "Runway only, no fixes": "runway"}
+
     APPR_WX_FIXED = [("leave", "Leave X-Plane's weather alone"),
                      ("clear", "Clear day - just the landing"),
                      ("low", "Low: 800 ft overcast, 3 SM"),
@@ -1987,7 +1997,7 @@ class App(tk.Tk):
             or (self._home_ref() or {}).get("id", "")
         win = tk.Toplevel(self)
         win.title("Set up an approach")
-        win.geometry(f"{self.theme.px(740)}x{self.theme.px(600)}")
+        win.geometry(f"{self.theme.px(760)}x{self.theme.px(730)}")
         win.transient(self)
         self.theme.track(win, "window")
         head = ttk.Frame(win, style="Bg.TFrame", padding=(12, 10, 12, 4))
@@ -2005,6 +2015,10 @@ class App(tk.Tk):
         self.v_apwx = tk.StringVar(value=next((t for k, t in self.APPR_WX if k == _k),
                                               self.APPR_WX[1][1]))
         self.v_apils = tk.BooleanVar(value=self.cfg.get("appr_ils", True))
+        self.v_aptype = tk.StringVar(value=self.cfg.get("appr_type", "Auto - ILS if there is one"))
+        self.v_apap = tk.StringVar(value=self.cfg.get("appr_ap", "Armed, servos off"))
+        self.v_aprnav = tk.StringVar(value=self.cfg.get("appr_rnav", "Straight-in fixes in the GPS"))
+        self.v_apset = tk.BooleanVar(value=self.cfg.get("appr_set", True))
 
         g = ttk.LabelFrame(body, text="Where", padding=(10, 8))
         g.pack(fill="x")
@@ -2033,6 +2047,23 @@ class App(tk.Tk):
         ttk.Label(g, text="   Weather:").pack(side="left")
         ttk.Combobox(g, textvariable=self.v_apwx, state="readonly", width=40,
                      values=[t for _, t in self.APPR_WX]).pack(side="left", padx=4)
+
+        g = ttk.LabelFrame(body, text="Avionics", padding=(10, 8))
+        g.pack(fill="x", pady=(0, 8))
+        ttk.Checkbutton(g, text="Set the radios and the autopilot for me",
+                        variable=self.v_apset).grid(row=0, column=0, columnspan=4, sticky="w")
+        ttk.Label(g, text="Approach:").grid(row=1, column=0, sticky="w", pady=(4, 0))
+        ttk.Combobox(g, textvariable=self.v_aptype, state="readonly", width=28,
+                     values=list(self.APPR_TYPE)).grid(row=1, column=1, sticky="w", padx=4, pady=(4, 0))
+        ttk.Label(g, text="Autopilot:").grid(row=1, column=2, sticky="e", padx=(8, 0), pady=(4, 0))
+        ttk.Combobox(g, textvariable=self.v_apap, state="readonly", width=20,
+                     values=list(self.APPR_AP)).grid(row=1, column=3, sticky="w", padx=4, pady=(4, 0))
+        ttk.Label(g, text="For RNAV:").grid(row=2, column=0, sticky="w", pady=(2, 0))
+        ttk.Combobox(g, textvariable=self.v_aprnav, state="readonly", width=28,
+                     values=list(self.APPR_RNAV)).grid(row=2, column=1, sticky="w", padx=4, pady=(2, 0))
+        ttk.Label(g, text="(needs the GPS plugin)", style="Muted.TLabel").grid(
+            row=2, column=2, columnspan=2, sticky="w", padx=(8, 0), pady=(2, 0))
+        g.columnconfigure(1, weight=1)
 
         self.ap_txt = ScrolledText(win, wrap="word", height=9, font=MONO)
         self.theme.track(self.ap_txt, "text")
@@ -2084,7 +2115,8 @@ class App(tk.Tk):
             self.l_apwhy.config(text=why)
             self.draw_approach(a, wx)
         self._ap_refresh = refresh
-        for v in (self.v_apid, self.v_aprwy, self.v_apnm, self.v_apwx, self.v_apils):
+        for v in (self.v_apid, self.v_aprwy, self.v_apnm, self.v_apwx, self.v_apils,
+                  self.v_aptype, self.v_apap, self.v_aprnav, self.v_apset):
             v.trace_add("write", lambda *a: self.debounce("appr", refresh, 200))
         e.bind("<Return>", lambda ev: refresh())
         refresh()
@@ -2136,6 +2168,17 @@ class App(tk.Tk):
             lines.insert(0, f"Weather: {h['name']} - {h['what']}")
         lines.append("")
         lines += [L for L in xp_hazard.analyse(wx, a["elev"], ac)[1:] if L]
+        if self.v_apset.get():
+            pl = xp_avionics.plan(a, opt, nm, ac, wx, self.APPR_AP.get(self.v_apap.get(), "armed"),
+                                  self.APPR_TYPE.get(self.v_aptype.get(), "auto"))
+            lines.append("")
+            lines.append("AVIONICS")
+            lines += pl["lines"]
+            if pl["kind"] == "rnav" and self.APPR_RNAV.get(self.v_aprnav.get()) == "fixes":
+                lines.append(f"The GPS gets a straight-in built here: a fix {max(nm, 6):g} nm out, "
+                             f"one at 4 nm, one at 1.5 nm, then the threshold. It is not the "
+                             f"published procedure - don't use it to practise a real one.")
+            lines += ["(" + w + ")" for w in pl["warnings"]]
         lines.append("")
         lines.append(xp_approach.intercept_hint(nm))
         lines.append("")
@@ -2166,7 +2209,18 @@ class App(tk.Tk):
                                    link.runway_start(a["id"], opt["end"], nm),
                                    None, weather, True, system_time=False)
         core.save_config(appr_nm=int(nm), appr_wx=key, appr_ils=self.v_apils.get(),
+                         appr_type=self.v_aptype.get(), appr_ap=self.v_apap.get(),
+                         appr_rnav=self.v_aprnav.get(), appr_set=self.v_apset.get(),
                          appr_last=[a["id"], opt["end"], nm, key])
+        avio = None
+        if self.v_apset.get():
+            # every Tk variable is read here, on the main thread - the worker only uses the copy
+            avio = {"apt": a, "opt": opt, "nm": nm,
+                    "wx": wx if key not in ("leave", "real") else self.approach_wx(key),
+                    "ac": self.ac(), "root": self.root(),
+                    "ap": self.APPR_AP.get(self.v_apap.get(), "armed"),
+                    "want": self.APPR_TYPE.get(self.v_aptype.get(), "auto"),
+                    "rnav": self.APPR_RNAV.get(self.v_aprnav.get(), "fixes")}
         (core.CACHE_DIR / "last_flight.json").write_text(json.dumps({"data": flight}, indent=2))
         self._appr_last = (a["id"], opt["end"], nm, key)
         api = self.api()
@@ -2186,8 +2240,48 @@ class App(tk.Tk):
                 self.ui(lambda: messagebox.showerror("Approach", m))
                 return
             self.log(f"On final: {label}")
+            if avio:
+                self.set_avionics(api, avio)
             self.ui(lambda: self.v_status.set(f"On final at {label} - press it again for another go."))
         threading.Thread(target=work, daemon=True).start()
+
+    def set_avionics(self, api, spec):
+        """Tune the radios, wind the bugs and arm the autopilot, once the sim has settled."""
+        time.sleep(2.5)                       # the aeroplane needs a moment to exist
+        try:
+            var = float(api.get(xp_avionics.MAGVAR))
+        except Exception:
+            var = 0.0
+        pl = xp_avionics.plan(spec["apt"], spec["opt"], spec["nm"], spec["ac"], spec["wx"],
+                              spec["ap"], spec["want"], var)
+        ok, failed = [], []
+        for ref, val, why in pl["sets"]:
+            try:
+                api.set(ref, val)
+                ok.append(why)
+            except Exception as e:
+                failed.append(f"{why} ({e})")
+        for cmd, why in pl["commands"]:
+            try:
+                api.command(cmd)
+                ok.append(why)
+            except Exception as e:
+                failed.append(f"{why} ({e})")
+        if ok:
+            self.log("Avionics set: " + "; ".join(ok) + ".")
+        if failed:
+            self.log("Couldn't set: " + "; ".join(failed) +
+                     ". Aircraft with their own avionics keep their own radios - set them by hand.")
+        if pl["kind"] == "rnav" and spec["rnav"] == "fixes":
+            try:
+                fms = xp_avionics.rnav_fms(spec["apt"], spec["opt"], max(spec["nm"], 6.0), True)
+                link.send_route_to_plugin(spec["root"], fms, wait_for_new_flight=False)
+                inst, _ = link.plugin_status(spec["root"])
+                self.log("Straight-in sent to the GPS." if inst else
+                         "Straight-in written, but the GPS plugin isn't installed - "
+                         "load it from X-Plane's GPS menu, or use 'Install GPS plugin'.")
+            except Exception as e:
+                self.log(f"Couldn't send the straight-in to the GPS: {e}")
 
     def approach_again(self):
         """Back onto final, same as last time. For after a go-around or a bad one."""

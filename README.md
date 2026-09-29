@@ -25,6 +25,8 @@ Python + Tkinter, no build step, no account, works offline.
 
 **Sets up the flight in X-Plane.** Through X-Plane 12.4's Web API: aircraft and livery, start on a runway / at a gate / on final / in the air, date and time, weather (mission, real-world, preset, or leave it alone), payload and fuel. The route goes into the GPS through a small companion plugin.
 
+**Sets the aeroplane up, not just its position.** Tick one box and the approach tunes NAV1 and NAV2 to the localizer with the course in magnetic degrees, puts tower or CTAF on COM1 and ATIS on COM2, sets the altimeter, winds the altitude bug to the missed approach height, and arms the autopilot — or couples it and lets it fly, or leaves it alone entirely. Airports with no localizer get an RNAV straight-in built into the GPS. It says plainly what it can't do: aircraft with their own avionics ignore X-Plane's datarefs, and the straight-in is not the charted procedure.
+
 **Drops you straight onto final, over and over.** Type an airport, and it picks the runway (the instrument one, or the one with the headwind), reads the localizer frequency out of your scenery, and tells you what you're about to be dropped into: the height you'll appear at, the descent rate and speed to hold, the wind on the runway, the usual minimums, and whether you'll actually see the runway in that weather. Press it again after every go-around.
 
 **Does the numbers.** Density altitude, the best runway for the wind with head and crosswind components, takeoff and landing distances against the runway you actually have, fuel with reserves against tank capacity, and weight against MTOW. Calibrated against a Cessna 172's published figures — within a few percent from sea level to 8,000 ft — but explicitly rules of thumb, not a flight manual.
@@ -84,6 +86,7 @@ python xp_flight_ideas.py --wonders-near KBJC        # what's worth seeing near 
 | `xp_perf.py` | density altitude, runway lengths, fuel, weight |
 | `xp_approach.py` | approach geometry, runway choice, minimums |
 | `xp_hazard.py` | icing, turbulence, shear and the inclement-weather scenarios |
+| `xp_avionics.py` | tunes the radios, sets the bugs, arms the autopilot |
 | `xp_wx.py` | live weather from aviationweather.gov |
 | `xp_scenic.py` | the worldwide scenic database and the random generator |
 | `xp_wonders.py` | 429 natural wonders and landmarks, with positions and heights |
