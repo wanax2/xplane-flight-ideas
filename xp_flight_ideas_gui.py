@@ -3918,8 +3918,10 @@ class App(tk.Tk):
         ttk.Checkbutton(q2, text="Only airports my plane can use", variable=self.v_wxusable).pack(side="left")
         ttk.Label(q2, text="   Minimum severity:").pack(side="left")
         self.v_wxmin = tk.StringVar(value=f'{c.get("wx_min", 2):g}')
-        ttk.Spinbox(q2, textvariable=self.v_wxmin, from_=0.5, to=10, increment=0.5, width=4).pack(side="left")
+        ttk.Spinbox(q2, textvariable=self.v_wxmin, from_=0, to=20, increment=0.5, width=4).pack(side="left")
         ttk.Label(q2, text="(higher = only the worst)", style="Muted.TLabel").pack(side="left", padx=4)
+        ttk.Button(q2, text="Worst anyway", style="Quiet.TButton",
+                   command=lambda: self.find_weather(ignore_min=True)).pack(side="right")
 
         body = ttk.PanedWindow(f, orient="horizontal")
         body.pack(fill="both", expand=True)
@@ -4047,7 +4049,7 @@ class App(tk.Tk):
             self._wx_job = self.after(int(mins * 60000), self.schedule_weather)
         self.update_wx_age()
 
-    def find_weather(self, quiet=False):
+    def find_weather(self, quiet=False, ignore_min=False):
         if not self.metar_src.obs:
             self.refresh_weather(then=lambda ok: ok and self.find_weather())
             return
@@ -4083,14 +4085,15 @@ class App(tk.Tk):
             maxnm = self.num(self.v_wxrad, 300)
         kind = self.hazard_key()
         usable = self.v_wxusable.get()
-        minsc = self.num(self.v_wxmin, 2)
+        minsc = 0.01 if ignore_min else self.num(self.v_wxmin, 2)   # still skip the calm ones
+        self._wx_relaxed = bool(ignore_min)
         self.wx_gen = gen
         self.l_wxage.config(text="searching...")
 
         def work():
             try:
                 res = livewx.find_bad_weather(obs, gen, kind, home=home, max_nm=maxnm, usable_only=usable,
-                                              min_score=minsc, limit=300)
+                                              min_score=minsc, limit=30 if ignore_min else 300)
                 err = None
             except Exception as e:
                 res, err = [], e
@@ -4114,9 +4117,29 @@ class App(tk.Tk):
         else:
             self.wx_sel = None
             self.fill_nearby()
-            self.l_metar.config(text="Nothing that bad right now - try 'Any bad weather', a bigger radius, or later.")
+            self.l_metar.config(text=self.nothing_found_text())
             self.l_alts.config(text="")
             self.draw_wx_map()
+
+    def nothing_found_text(self):
+        """Why the search came back empty, and what would actually find something."""
+        kind = self.hazard_key()
+        want = self.num(self.v_wxmin, 2)
+        try:
+            best, where = livewx.worst_available(self.metar_src.obs or (), kind)
+        except Exception:
+            best, where = 0.0, None
+        what = self.v_hazard.get().lower()
+        if best <= 0:
+            return (f"No {what} anywhere in the {len(self.metar_src.obs or ()):,} reports just now. "
+                    f"Try 'Any bad weather', or come back later - it is a big planet and the weather "
+                    f"moves.")
+        if best < want:
+            return (f"Nothing at severity {want:g} or above. The worst {what} anywhere right now is "
+                    f"{best:.1f}, at {where['id']} ({livewx.describe(where)}). Turn the minimum down "
+                    f"to about {max(0.5, round(best - 0.5, 1)):g}, or press 'Worst anyway'.")
+        return ("Found weather that bad, but no airport your aeroplane can use is near enough to it. "
+                "Widen the radius, or untick 'Only airports my plane can use'.")
 
     def _fill_wx_table(self):
         self.tv.delete(*self.tv.get_children())

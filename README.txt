@@ -1,4 +1,4 @@
-X-PLANE FLIGHT IDEAS  v6.10
+X-PLANE FLIGHT IDEAS  v6.10.1
 ========================
 
 Files
@@ -798,6 +798,20 @@ WHERE THE ONLINE DATA COMES FROM
    All of them are optional. The app works with no internet at all - it just
    uses your own X-Plane scenery instead.
 
+
+WHAT'S NEW IN 6.10.1
+   - Fixed: picking a particular hazard on Weather > Real weather now - "Anything
+     IFR or LIFR", "Fog", "Thunderstorms" - could find nothing at all, however
+     bad the weather was, while "Any bad weather" found plenty. "Any bad weather"
+     adds every hazard together and scores up to about 20; a single hazard on its
+     own only reached about 6, so one "minimum severity" setting could never suit
+     both. A severity of 8 now means the same thing whichever you pick.
+   - "Anything IFR or LIFR" no longer counts MVFR airports, which is what it says
+     on the label.
+   - When a search finds nothing, it now says what the worst weather on offer
+     actually is and where, and what to set the minimum to. There is also a
+     "Worst anyway" button that ignores the minimum and just shows the worst
+     there is.
 
 WHAT'S NEW IN 6.10
    - "Fix my scenery order": reads scenery_packs.ini, says what's wrong with it

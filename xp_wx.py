@@ -289,11 +289,32 @@ def hazards(o):
     return h
 
 
+# One hazard on its own scores about a third of what "any bad weather" scores,
+# because that one adds every hazard together. Left alone, the "minimum severity"
+# box would mean something different for every choice in the list - and a setting
+# that was sensible for "any" would quietly match nothing at all for the rest.
+# This is the factor that puts them on the same scale.
+SINGLE = 3.0
+
+
 def score(o, kind="any"):
+    """How bad this weather is, on one scale whichever hazard you asked for."""
     h = hazards(o)
     if kind == "any":
         return h["ifr"] + h["wind"] * 1.1 + h["ts"] + h["snow"] + h["rain"] * 0.6 + h["fog"] * 0.5 + h["dust"] * 0.8
-    return h.get(kind, 0.0)
+    if kind == "ifr" and (o.get("cat") or "") not in ("IFR", "LIFR"):
+        return 0.0          # the list says IFR or LIFR, so MVFR doesn't count here
+    return h.get(kind, 0.0) * SINGLE
+
+
+def worst_available(obs, kind="any"):
+    """The highest score anywhere in this batch, and where. For saying 'best I have'."""
+    best, where = 0.0, None
+    for o in obs:
+        s = score(o, kind)
+        if s > best:
+            best, where = s, o
+    return best, where
 
 
 def describe(o):
