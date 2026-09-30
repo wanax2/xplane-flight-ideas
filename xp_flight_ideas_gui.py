@@ -54,6 +54,7 @@ import xp_coach                        # noqa: E402
 import xp_checkride                    # noqa: E402
 import xp_history                      # noqa: E402
 import xp_world                        # noqa: E402
+import xp_packs                        # noqa: E402
 import xp_fleet                        # noqa: E402
 import xp_acf                           # noqa: E402
 import xp_score                         # noqa: E402
@@ -1672,6 +1673,140 @@ class App(tk.Tk):
             pass
         self.l_scenery.config(text="  \u00b7  ".join(bits) or "Reading your scenery...")
 
+
+    # ======================================================================
+    # Putting scenery_packs.ini back in order
+    # ======================================================================
+    def packs_ini(self):
+        return self.root() / "Custom Scenery" / "scenery_packs.ini"
+
+    def packs_window(self):
+        """Look at the scenery order, say what's wrong, and offer to fix it."""
+        ini = self.packs_ini()
+        if not ini.is_file():
+            messagebox.showinfo("Scenery order",
+                                f"There's no scenery_packs.ini at\n{ini}\n\nX-Plane writes that "
+                                f"file itself the first time it starts with add-on scenery "
+                                f"installed. Start X-Plane once, then come back.")
+            return
+        try:
+            entries, header = xp_packs.read(ini, ini.parent)
+        except OSError as e:
+            messagebox.showerror("Scenery order", f"Couldn't read it:\n{e}")
+            return
+
+        win = tk.Toplevel(self)
+        win.title("Scenery order")
+        win.geometry(f"{self.theme.px(940)}x{self.theme.px(700)}")
+        win.transient(self)
+        self.theme.track(win, "window")
+        head = ttk.Frame(win, style="Bg.TFrame", padding=(12, 10, 12, 4))
+        head.pack(fill="x")
+        ttk.Label(head, text="Scenery order", style="Head.TLabel").pack(side="left")
+        ttk.Label(head, text=str(ini), style="MutedBg.TLabel").pack(side="left", padx=(10, 0))
+
+        body = ttk.Frame(win, padding=(12, 6))
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="X-Plane draws this list top-down and the first pack that covers a "
+                             "tile wins. It writes the file alphabetically, which is almost never "
+                             "the order you want: airports over overlays, overlays over photo "
+                             "ground, photo ground over mesh.",
+                  style="Muted.TLabel", wraplength=self.theme.px(880),
+                  justify="left").pack(anchor="w", pady=(0, 6))
+
+        opts = ttk.Frame(body)
+        opts.pack(fill="x", pady=(0, 6))
+        v_add = tk.BooleanVar(value=True)
+        v_dedupe = tk.BooleanVar(value=True)
+        ttk.Checkbutton(opts, text="Add folders that aren't in the list yet",
+                        variable=v_add).pack(side="left")
+        ttk.Checkbutton(opts, text="Drop packs listed twice",
+                        variable=v_dedupe).pack(side="left", padx=(14, 0))
+
+        nb = ttk.Notebook(body)
+        nb.pack(fill="both", expand=True)
+        t1 = ttk.Frame(nb, padding=6)
+        nb.add(t1, text="What's wrong")
+        txt = ScrolledText(t1, wrap="word", font=MONO, height=10)
+        self.theme.track(txt, "text")
+        txt.pack(fill="both", expand=True)
+        txt.config(state="disabled")
+        self.pack_txt = txt
+        t2 = ttk.Frame(nb, padding=6)
+        nb.add(t2, text="The new order")
+        plan_txt = ScrolledText(t2, wrap="none", font=MONO, height=10)
+        self.theme.track(plan_txt, "text")
+        plan_txt.pack(fill="both", expand=True)
+        plan_txt.config(state="disabled")
+        self.pack_plan = plan_txt
+        t3 = ttk.Frame(nb, padding=6)
+        nb.add(t3, text="As it is now")
+        now_txt = ScrolledText(t3, wrap="none", font=MONO, height=10)
+        self.theme.track(now_txt, "text")
+        now_txt.pack(fill="both", expand=True)
+        now_txt.config(state="disabled")
+        self.pack_now = now_txt
+
+        state = {"order": [], "moved": [], "probs": []}
+
+        def refresh():
+            items = list(entries)
+            extra = xp_packs.missing_folders(items, ini.parent)
+            probs = xp_packs.problems(items, ini.parent, extra if v_add.get() else None)
+            work = list(items)
+            if v_dedupe.get():
+                work, _dropped = xp_packs.dedupe(work)
+            if v_add.get() and extra:
+                work = xp_packs.add_missing(list(work), extra, ini.parent)
+            order = xp_packs.sort_entries(work)
+            moved = xp_packs.changed([e for e in items if e in order], order)
+            state.update(order=order, moved=moved, probs=probs)
+            self.set_text(txt, xp_packs.report(items, probs, moved))
+            was = {e.name: i + 1 for i, e in enumerate(items)}
+            self.set_text(plan_txt, xp_packs.listing(order, mark=was))
+            self.set_text(now_txt, xp_packs.listing(items))
+            n = len(moved) + (len(extra) if v_add.get() else 0)
+            b_fix.config(text="Nothing to change" if not n else f"Write the new order ({n} changes)")
+            b_fix.state(["disabled"] if not n else ["!disabled"])
+
+        def do_fix():
+            order = state["order"]
+            if not order:
+                return
+            if not messagebox.askyesno("Scenery order",
+                                       f"Rewrite scenery_packs.ini with {len(order)} packs in the "
+                                       f"new order?\n\nThe file you have now is copied alongside "
+                                       f"it first, with the date in the name, so you can put it "
+                                       f"back by renaming.\n\nX-Plane has to be restarted for "
+                                       f"this to take effect."):
+                return
+            try:
+                backup = xp_packs.write(ini, order, header)
+            except OSError as e:
+                messagebox.showerror("Scenery order", f"Couldn't write it:\n{e}")
+                return
+            self.log(f"Scenery order rewritten. Old file kept as {backup.name if backup else '-'}.")
+            messagebox.showinfo("Scenery order",
+                                f"Done - {len(order)} packs written.\n\nThe old file is kept as:\n"
+                                f"{backup.name if backup else '-'}\n\nRestart X-Plane to see it.")
+            entries[:] = xp_packs.read(ini, ini.parent)[0]
+            refresh()
+            self.scan_scenery(force=True)
+
+        foot = ttk.Frame(win, style="Bg.TFrame", padding=(12, 6, 12, 12))
+        foot.pack(fill="x")
+        b_fix = ttk.Button(foot, text="Write the new order", style="Big.TButton", command=do_fix)
+        b_fix.pack(side="left")
+        ttk.Button(foot, text="Open the folder", style="Quiet.TButton",
+                   command=lambda: self.open_path(ini.parent)).pack(side="left", padx=8)
+        ttk.Button(foot, text="Close", style="Quiet.TButton",
+                   command=lambda: (self.theme.forget(win), win.destroy())).pack(side="right")
+        for v in (v_add, v_dedupe):
+            v.trace_add("write", lambda *a: refresh())
+        refresh()
+        self.pack_win = win
+        return win
+
     def scenery_window(self):
         sc = self.scenery()
         win = tk.Toplevel(self)
@@ -1684,6 +1819,8 @@ class App(tk.Tk):
         ttk.Label(head, text="Scenery you have installed", style="Head.TLabel").pack(side="left")
         ttk.Button(head, text="Rescan", style="Quiet.TButton",
                    command=lambda: (self.scan_scenery(force=True), win.destroy())).pack(side="right")
+        ttk.Button(head, text="Fix the order...", style="Quiet.TButton",
+                   command=self.packs_window).pack(side="right", padx=6)
         ttk.Label(win, text=sc.summary_line(), style="MutedBg.TLabel").pack(anchor="w", padx=12)
         nb = ttk.Notebook(win)
         nb.pack(fill="both", expand=True, padx=8, pady=6)
@@ -3415,6 +3552,9 @@ class App(tk.Tk):
                                                                         padx=8, pady=(6, 0))
         ttk.Button(g, text="My scenery...", style="Quiet.TButton",
                    command=self.scenery_window).grid(row=1, column=2, sticky="e", pady=(6, 0))
+        ttk.Button(g, text="Fix my scenery order...", style="Quiet.TButton",
+                   command=self.packs_window).grid(row=3, column=0, columnspan=2, sticky="w",
+                                                   pady=(6, 0))
         ttk.Label(g, text=self.l_scenery.cget("text"), style="Muted.TLabel",
                   wraplength=self.theme.px(420), justify="left").grid(row=2, column=0, columnspan=3,
                                                                       sticky="w", pady=(8, 0))
@@ -4910,9 +5050,9 @@ class App(tk.Tk):
             self.v_fmsdir.set("" if Path(d) == xp else d)
             self.save_cfg()
 
-    def open_fms_dir(self):
-        d = self.fms_dir()
-        d.mkdir(parents=True, exist_ok=True)
+    def open_path(self, d):
+        """Show a folder in Explorer / Finder / whatever this machine uses."""
+        d = Path(d)
         try:
             if sys.platform.startswith("win"):
                 os.startfile(str(d))                                   # noqa: S606
@@ -4921,6 +5061,11 @@ class App(tk.Tk):
                 subprocess.Popen(["xdg-open" if sys.platform.startswith("linux") else "open", str(d)])
         except Exception as e:
             self.log(f"Couldn't open {d}: {e}")
+
+    def open_fms_dir(self):
+        d = self.fms_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        self.open_path(d)
 
     def update_fms_label(self):
         if not hasattr(self, "l_fms"):

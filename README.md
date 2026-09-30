@@ -23,6 +23,8 @@ Python + Tkinter, no build step, no account, works offline.
 
 **Doesn't actually need X-Plane.** The app is built to read your own scenery — that's the point of it — but on a machine without the simulator it offers to download the OurAirports database instead: around eighty thousand airports worldwide with their runways, surfaces, lighting, thresholds and frequencies, reshaped into exactly the records the apt.dat parser produces. The generator, the scenic engine, the wonders, the approach geometry, the briefings and the exports all work without knowing the difference. What's genuinely missing is ILS (no open equivalent to `earth_nav.dat`, so approaches become RNAV straight-ins), your own aircraft (built-in profiles stand in), and setting the flight up in the sim. Plan on the laptop, save the `.fms`, fly it later on the machine that has X-Plane.
 
+**Puts scenery_packs.ini back in order.** X-Plane draws scenery top-down — the first pack that covers a tile wins — and it writes that file alphabetically, which is almost never right. So your custom airport ends up under a mesh, or your ortho hides behind default terrain. The app reads the file, works out what each pack actually is by looking inside the folder, tells you what's wrong in plain words, shows you the order it would write, and only then rewrites it — keeping a dated copy of the old one. Airports over overlays over photo ground over mesh, which is what lets simHeaven X-World and X-Plane Map Enhancement coexist instead of fighting. Packages that number their own folders, like X-World, keep their own order and stay together.
+
 **Uses the scenery you actually installed.** It reads `Custom Scenery` and `scenery_packs.ini` and knows which airports come from add-on packs and which map tiles have ortho or custom mesh. Then it can *favour* those places — or use *only* them. It will also tell you which add-on airports you have never once flown into.
 
 **Sets up the flight in X-Plane.** Through X-Plane 12.4's Web API: aircraft and livery, start on a runway / at a gate / on final / in the air, date and time, weather (mission, real-world, preset, or leave it alone), payload and fuel. The route goes into the GPS through a small companion plugin.
@@ -111,6 +113,7 @@ python xp_flight_ideas.py --wonders-near KBJC        # what's worth seeing near 
 | `xp_score.py` | landing scoring and the logbook |
 | `xp_history.py` | the weather on a past date, from two archives |
 | `xp_world.py` | every airport on earth, for machines with no X-Plane |
+| `xp_packs.py` | puts `scenery_packs.ini` back in the right order |
 | `xp_coach.py` | reads the logbook back to you, and rolling currency |
 | `xp_checkride.py` | manoeuvres graded live against real tolerances |
 | `xp_fleet.py` | where each of your aeroplanes was left |

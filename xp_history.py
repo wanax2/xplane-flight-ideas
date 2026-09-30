@@ -513,18 +513,23 @@ def fetch_day(ident, name, lat, lon, date, cache_dir=None, timeout=30, prefer_st
                 pass
     obs, source, note = [], "", ""
     err = []
+    reached = False
     if prefer_station and ident:
         say(f"Asking the ASOS archive what {ident} filed that day...")
         try:
             obs = asos_day(ident, date, lat, lon, timeout, urls.get("asos"))
+            reached = True
             if obs:
                 source = "asos"
         except Exception as e:
             err.append(f"the METAR archive ({e})")
     if not obs:
-        if ident and prefer_station:
+        if ident and prefer_station and reached:
             note = f"{ident} filed nothing that day, so this is reanalysis."
             say(f"Nothing from {ident}. Falling back to the worldwide reanalysis...")
+        elif ident and prefer_station:
+            note = "The METAR archive couldn't be reached, so this is reanalysis."
+            say("Couldn't reach the METAR archive. Trying the worldwide reanalysis...")
         else:
             say("Asking the worldwide reanalysis...")
         try:

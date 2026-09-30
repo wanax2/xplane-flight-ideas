@@ -1,4 +1,4 @@
-X-PLANE FLIGHT IDEAS  v6.9
+X-PLANE FLIGHT IDEAS  v6.10
 ========================
 
 Files
@@ -26,6 +26,7 @@ Files
   xp_avionics.py            tunes the radios, sets the bugs, arms the autopilot
   xp_history.py             the weather on a past date, from two archives
   xp_world.py               every airport on earth, for machines with no X-Plane
+  xp_packs.py               puts scenery_packs.ini back in the right order
   xp_coach.py               reads your logbook back to you, and rolling currency
   xp_checkride.py           manoeuvres graded live against real tolerances
   xp_fleet.py               where each of your aeroplanes was left
@@ -463,6 +464,50 @@ tick "Add Python to PATH" during install). Nothing else to install.
    lowvis     - an approach down to minimums in fog or heavy haze; IFR aircraft
                 get the ILS to DH, VFR ones get a no-horizon haze flight (v4.6)
 
+   FIX MY SCENERY ORDER   (Settings, or My scenery > Fix the order)   (v6.10)
+   X-Plane draws scenery top-down: the first pack in scenery_packs.ini that has
+   something to say about a tile wins, and everything below it is ignored for
+   that tile. So that file is a priority list - and X-Plane writes it itself,
+   alphabetically, which is almost never the order you want. Your custom airport
+   ends up buried under a mesh; ortho photos hide behind default terrain;
+   buildings sit in a field that should be a runway.
+
+   This reads the file, works out what each pack actually is - by looking inside
+   the folder, not just at its name - and shows you three tabs: what's wrong, the
+   order it would write, and the order you have now. Nothing is written until you
+   press the button, and when you do, the file you had is kept alongside it with
+   the date in the name, so putting it back is a rename.
+
+   The order it uses, highest priority first:
+     1. custom airports          the airport you installed beats everything
+     2. Global Airports          X-Plane's own, below yours and above the ground
+     3. overlays                 buildings, roads, forests - simHeaven X-World
+                                 and the like
+     4. libraries                objects the overlays refer to
+     5. photo ground / ortho     X-Plane Map Enhancement, Ortho4XP, zOrtho
+     6. terrain mesh             HD/UHD Mesh, AlpilotX
+     7. X-Plane's own global scenery
+
+   Overlays above photo scenery is what lets two big packages live together
+   rather than fight: one supplies the ground, the other supplies what stands on
+   it. simHeaven X-World and X-Plane Map Enhancement are the usual pair, and they
+   are not rivals - X-World gives you the buildings and forests, XPME gives you
+   the ground underneath them. Almost all the trouble people have with the two of
+   them installed at once is this file being in the wrong order.
+
+   One rule matters more than the sorting: a package that ships its folders
+   numbered - X-World's 1-vfr-landmarks, 2-extras, 3-regions and so on - has
+   already said what order it wants its own parts in. Those are kept exactly as
+   numbered and kept together as a block. Sorting them alphabetically is how
+   people break X-World.
+
+   It will also, if you tick the boxes, fold in folders sitting in Custom Scenery
+   that the file has never mentioned, and drop packs listed twice (keeping the
+   first, which is the one X-Plane has been acting on). Packs whose folder is no
+   longer there are pushed to the bottom rather than deleted.
+
+   Restart X-Plane after writing - it reads this file once, at startup.
+
    NO X-PLANE ON THIS COMPUTER?   (v6.9)
    The app normally builds everything out of your own scenery - it reads apt.dat,
    so it only ever offers you places your install actually has, add-on airports
@@ -753,6 +798,13 @@ WHERE THE ONLINE DATA COMES FROM
    All of them are optional. The app works with no internet at all - it just
    uses your own X-Plane scenery instead.
 
+
+WHAT'S NEW IN 6.10
+   - "Fix my scenery order": reads scenery_packs.ini, says what's wrong with it
+     in plain words, shows the order it would write, and rewrites it on your say
+     so - keeping a dated copy of the old one. Airports over overlays over photo
+     ground over mesh, with numbered packages like simHeaven's X-World kept in
+     their own order and kept together.
 
 WHAT'S NEW IN 6.9
    - The app no longer needs X-Plane. On a machine without it, it offers to
