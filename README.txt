@@ -1,4 +1,4 @@
-X-PLANE FLIGHT IDEAS  v6.8
+X-PLANE FLIGHT IDEAS  v6.9
 ========================
 
 Files
@@ -25,6 +25,7 @@ Files
   xp_hazard.py              icing, turbulence, shear, and 13 inclement-weather scenarios
   xp_avionics.py            tunes the radios, sets the bugs, arms the autopilot
   xp_history.py             the weather on a past date, from two archives
+  xp_world.py               every airport on earth, for machines with no X-Plane
   xp_coach.py               reads your logbook back to you, and rolling currency
   xp_checkride.py           manoeuvres graded live against real tolerances
   xp_fleet.py               where each of your aeroplanes was left
@@ -462,6 +463,41 @@ tick "Add Python to PATH" during install). Nothing else to install.
    lowvis     - an approach down to minimums in fog or heavy haze; IFR aircraft
                 get the ILS to DH, VFR ones get a no-horizon haze flight (v4.6)
 
+   NO X-PLANE ON THIS COMPUTER?   (v6.9)
+   The app normally builds everything out of your own scenery - it reads apt.dat,
+   so it only ever offers you places your install actually has, add-on airports
+   included. On a machine with no X-Plane there is nothing to read, and until now
+   that meant no airports and an app that could only show you weather.
+
+   It can now run on the OurAirports database instead: three free public files
+   listing around eighty thousand airports worldwide, their runways and their
+   radio frequencies. The app reshapes them into exactly the same airport records
+   the apt.dat parser produces, so the generator, the scenic engine, the wonders,
+   the approach geometry, the briefings, the numbers and the exports all work
+   without knowing the difference.
+
+   First run on a machine with no X-Plane, it offers to download it (about 20 MB,
+   once, then cached and offline like everything else). Settings has the same
+   button if you want it later, or want to refresh it.
+
+   What is genuinely missing without the simulator's own files:
+     - ILS frequencies and courses. Those live in earth_nav.dat and have no open
+       equivalent, so approaches are built as the RNAV straight-in the app
+       already makes for any runway without a localizer. Runway lighting is
+       known, so the minimums are still right.
+     - Your aircraft. The built-in performance profiles stand in for the .acf
+       files, so you pick "a 172" rather than your particular 172.
+     - Add-on scenery: there is nothing installed to be clever about.
+     - Parking stands, and so gate starts.
+     - Setting the flight up in X-Plane, for the obvious reason. Everything else
+       works, and the .fms plan still saves, so you can plan on a laptop and fly
+       it later on the machine that has the simulator.
+
+   Runway lengths, surfaces, lighting, true headings, both thresholds, field
+   elevation and tower/CTAF frequencies are all real data - OurAirports is where
+   a good deal of scenery gets its numbers in the first place. It is CC0 and
+   needs no account.
+
    A DAY IN THE PAST (Weather > A day in the past)   (v6.8)
    Pick a place, a date and an hour, and fly the weather that was actually
    there. Type an airport, or a latitude and longitude for somewhere with no
@@ -707,7 +743,9 @@ WHERE THE ONLINE DATA COMES FROM
    opensky-network.org          which aircraft are airborne right now (free)
    flightplandatabase.com       routes shared by other pilots (free API)
    davidmegginson.github.io/ourairports-data
-                                the OurAirports open airport database
+                                the OurAirports open airport database - extra
+                                details for your airports, and the whole airport
+                                list on machines with no X-Plane
    en.wikipedia.org             airport photos and articles
    opentopodata.org             terrain elevations
    mesonet.agron.iastate.edu    archived METARs, for flying a past date
@@ -715,6 +753,16 @@ WHERE THE ONLINE DATA COMES FROM
    All of them are optional. The app works with no internet at all - it just
    uses your own X-Plane scenery instead.
 
+
+WHAT'S NEW IN 6.9
+   - The app no longer needs X-Plane. On a machine without it, it offers to
+     download a worldwide airport database and runs on that: every airport,
+     runway and frequency on earth. No ILS approaches, no aircraft of your own
+     and nothing to set up in the sim, but the generator, the scenic engine,
+     the wonders, the approaches, the briefings and the exports all work.
+   - When it can't find X-Plane it now says so in the window and offers the two
+     ways out, instead of sitting on "Looking for X-Plane..." and then claiming
+     airports were still loading.
 
 WHAT'S NEW IN 6.8
    - Fly a day that has already happened. Pick a place, a date and an hour and

@@ -53,6 +53,7 @@ import xp_avionics                     # noqa: E402
 import xp_coach                        # noqa: E402
 import xp_checkride                    # noqa: E402
 import xp_history                      # noqa: E402
+import xp_world                        # noqa: E402
 import xp_fleet                        # noqa: E402
 import xp_acf                           # noqa: E402
 import xp_score                         # noqa: E402
@@ -352,7 +353,7 @@ class App(tk.Tk):
             self.v_root.set(str(root))
             self.load_xplane()
         else:
-            self.log("Couldn't find X-Plane automatically - choose its folder at the top left.")
+            self.no_xplane(self.cfg.get("xplane_root"))
 
     # ======================================================================
     # Layout
@@ -1305,12 +1306,123 @@ class App(tk.Tk):
             self.v_root.set(d)
             self.load_xplane()
 
+    def no_xplane(self, tried=None):
+        """No X-Plane folder. Fall back to the worldwide database, or offer to get it."""
+        where = " It isn't at " + str(tried) + " any more." if tried else ""
+        self.log("Couldn't find your X-Plane folder." + where)
+        if self.world().ready():
+            self.log("Using the worldwide airport database instead.")
+            self.load_world()
+            return
+        self.l_scenery.config(text="No airports yet - open Settings...")
+        self.ui(lambda: self.v_status.set("No X-Plane folder found. Settings... at the top left, "
+                                          "or download the worldwide airport database."))
+        self.after(500, lambda: self._ask_for_xplane(tried))
+
+    def _ask_for_xplane(self, tried=None):
+        """Offer the two ways out: find the sim, or do without it."""
+        where = f"\n\nIt isn't at {tried} any more." if tried else ""
+        if messagebox.askyesno(
+                "X-Plane not found",
+                "I can't find X-Plane on this computer, so there is no apt.dat to read and no "
+                "airports to build flights from." + where
+                + "\n\nI can work without it: there is a free worldwide airport database "
+                  "(about 20 MB, downloaded once) with every airport, runway and frequency on "
+                  "earth. Everything here works on it except ILS approaches, your own aircraft "
+                  "and setting flights up in the simulator.\n\nDownload it now?"
+                  "\n\n(No = choose your X-Plane folder instead.)"):
+            self.download_world()
+        else:
+            self.browse_root()
+
+    # ======================================================================
+    # Working without X-Plane at all
+    # ======================================================================
+    def world(self):
+        if not hasattr(self, "_world"):
+            self._world = xp_world.World(core.CACHE_DIR)
+        return self._world
+
+    def download_world(self):
+        """Fetch the worldwide airport database, then use it."""
+        w = self.world()
+        self.v_status.set("Downloading the worldwide airport database...")
+        self.l_scenery.config(text="Downloading airports...")
+
+        def work():
+            try:
+                n = w.build(lambda url, timeout: xp_online._get(url, timeout=timeout)[0], log=self.log)
+                self.ui(lambda n=n: (self.load_world(),
+                                     messagebox.showinfo("Worldwide airports",
+                                                         f"{n:,} airports ready.\n\n" + xp_world.NO_ILS
+                                                         + "\n\n" + xp_world.NO_ACF)))
+            except Exception as e:
+                msg = str(e)
+                self.log(f"Couldn't download the worldwide database: {msg}")
+                self.ui(lambda msg=msg: (self.l_scenery.config(text="No airports - open Settings..."),
+                                         self.v_status.set(f"Download failed: {msg}"),
+                                         messagebox.showerror("Worldwide airports",
+                                                              f"Couldn't download it:\n{msg}\n\nThe "
+                                                              f"files come from OurAirports, which is "
+                                                              f"free and needs no account - so this is "
+                                                              f"usually the connection.")))
+        threading.Thread(target=work, daemon=True).start()
+
+    def load_world(self):
+        """Put the worldwide airports in, in place of scenery the app hasn't got."""
+        w = self.world()
+        if not w.ready():
+            return False
+        self.airports = w.copy({k: v for k, v in COUNTRY_NAMES.items()})
+        self.acfs = []
+        self.gen = None
+        self._load_error = None
+        self.log(f"Worldwide airport database in use: {w.line()}.")
+        self.log(xp_world.NO_ILS)
+        self.add_spots()
+        self.update_scenery_label()
+        self.fill_countries()
+        self.cb_acf["values"] = []
+        self.cb_acf.set("(no X-Plane on this computer)")
+        if self.v_prof.get() == AUTO_PROF:
+            self.v_prof.set(core.AIRCRAFT["c172"]["name"])
+        self._prof_cache = {}
+        self.on_profile()
+        self.update_plugin_label()
+        self.update_fms_label()
+        self.update_rules_label()
+        try:
+            self.fill_coach()
+        except Exception as e:
+            self.log(f"Coach: {e}")
+        self.ui(lambda n=len(self.airports):
+                self.v_status.set(f"Ready - {n:,} airports worldwide, no X-Plane needed."))
+        return True
+
+    def world_only(self):
+        """Are we running on the worldwide database rather than someone's scenery?"""
+        return bool(self.airports) and not self.acfs and any(a.get("world") for a in self.airports[:50])
+
+    def xplane_state(self):
+        """Why there are no airports, in words worth showing someone."""
+        if getattr(self, "_load_error", None):
+            return (f"Couldn't read your X-Plane folder: {self._load_error}\n\n"
+                    f"Open Settings... at the top left and check the folder.")
+        if not self.v_root.get().strip() or not core.is_xplane_root(self.root()):
+            return ("No airports yet.\n\nOpen \"Settings...\" at the top left. Either point it at "
+                    "your X-Plane 12 folder - the one with Aircraft, Custom Scenery and Resources "
+                    "in it - or download the worldwide airport database and run without X-Plane "
+                    "altogether.")
+        return "Airports are still loading - give it a moment."
+
     def load_xplane(self, rebuild=False):
         root = self.root()
         if not core.is_xplane_root(root):
             messagebox.showerror("X-Plane", f"That doesn't look like an X-Plane folder:\n{root}")
             return
         self.v_status.set("Loading airports...")
+
+        self._load_error = None
 
         def work():
             try:
@@ -1320,8 +1432,12 @@ class App(tk.Tk):
                 self.log(f"{len(aps):,} airports and {len(acfs)} aircraft found.")
                 self.ui(self.after_load)
             except Exception as e:
+                self._load_error = str(e)
                 self.log("Error loading X-Plane data: " + str(e))
                 self.log(traceback.format_exc())
+                self.ui(lambda e=e: (self.l_scenery.config(text="Couldn't read your scenery - see "
+                                                                "Progress > Messages"),
+                                     self.v_status.set(f"Couldn't read your X-Plane folder: {e}")))
         threading.Thread(target=work, daemon=True).start()
 
     def after_load(self):
@@ -1539,10 +1655,14 @@ class App(tk.Tk):
         if not hasattr(self, "l_scenery"):
             return
         bits = []
+        if self.airports and self.world_only():
+            self.l_scenery.config(text=f"{len(self.airports):,} airports worldwide  \u00b7  "
+                                       f"no X-Plane on this computer")
+            return
         if self.airports:
             bits.append(f"{len(self.airports):,} airports")
         elif not self.v_root.get().strip():
-            self.l_scenery.config(text="No X-Plane folder set - open Settings.")
+            self.l_scenery.config(text="No airports yet - open Settings...")
             return
         try:
             packs = self.scenery().packs
@@ -2551,9 +2671,10 @@ class App(tk.Tk):
                 raise ValueError("A latitude is -90 to 90 and a longitude is -180 to 180.")
             return ident, "", la, lo
         if ident:
-            raise ValueError(f"{ident} isn't in your scenery. Put its latitude and longitude in "
-                             f"instead and it will still work - the archives don't need the airport "
-                             f"to exist, only the place.")
+            where = "the airport list" if self.world_only() else "your scenery"
+            raise ValueError(f"{ident} isn't in {where}. Put its latitude and longitude in instead "
+                             f"and it will still work - the archives don't need the airport to "
+                             f"exist, only the place.")
         raise ValueError("Type an airport, or a latitude and longitude.")
 
     def hist_from_flight(self):
@@ -2904,7 +3025,7 @@ class App(tk.Tk):
     def approach_window(self, ident=None):
         """Put the aeroplane on final anywhere, over and over, without a flight plan."""
         if not self.airports:
-            messagebox.showinfo("Approach", "Airports are still loading - give it a moment.")
+            messagebox.showinfo("Approach", self.xplane_state())
             return
         start = ident or (self.idea.main_dest()["id"] if self.idea else None) \
             or (self._home_ref() or {}).get("id", "")
@@ -3299,6 +3420,23 @@ class App(tk.Tk):
                                                                       sticky="w", pady=(8, 0))
         g.columnconfigure(1, weight=1)
 
+        g = ttk.LabelFrame(body, text="No X-Plane on this computer?", padding=(10, 8))
+        g.pack(fill="x", pady=10)
+        ttk.Label(g, text="The app can run on a worldwide airport database instead of your scenery - "
+                          "every airport, runway and frequency on earth, from OurAirports. No ILS "
+                          "approaches and no aircraft of your own, but everything else works.",
+                  style="Muted.TLabel", wraplength=self.theme.px(430),
+                  justify="left").pack(anchor="w", pady=(0, 6))
+        wr = ttk.Frame(g)
+        wr.pack(fill="x")
+        ttk.Button(wr, text="Download it" if not self.world().ready() else "Download again",
+                   style="Quiet.TButton", command=self.download_world).pack(side="left")
+        if self.world().ready():
+            ttk.Button(wr, text="Use it now", style="Quiet.TButton",
+                       command=lambda: (self.load_world(), self.theme.forget(win),
+                                        win.destroy())).pack(side="left", padx=8)
+        ttk.Label(g, text=self.world().line(), style="Muted.TLabel").pack(anchor="w", pady=(6, 0))
+
         g = ttk.LabelFrame(body, text="Add-on scenery", padding=(10, 8))
         g.pack(fill="x", pady=10)
         ttk.Label(g, text="When picking airports, treat the scenery you have installed as:",
@@ -3342,7 +3480,7 @@ class App(tk.Tk):
             return
         home = self._home_ref()
         if not home:
-            messagebox.showinfo("Wonders", "Airports are still loading - give it a moment.")
+            messagebox.showinfo("Wonders", self.xplane_state())
             return
         win = tk.Toplevel(self)
         win.title("Wonders of the world")
@@ -3529,7 +3667,7 @@ class App(tk.Tk):
     # ======================================================================
     def make_gen(self, seed):
         if not self.airports:
-            raise RuntimeError("Airports are still loading - give it a moment.")
+            raise RuntimeError(self.xplane_state())
         area = self.area_key()
         iso = self.country_iso()
         opts = SimpleNamespace(
@@ -4066,7 +4204,7 @@ class App(tk.Tk):
 
     def scenic_finder(self):
         if not self.airports:
-            raise RuntimeError("Airports are still loading - give it a moment.")
+            raise RuntimeError(self.xplane_state())
         key = (self.profile_key(), self.v_private.get(), id(self.airports))
         if getattr(self, "_sc_key", None) != key:
             self._sc = scenic.ScenicFinder(core, self.airports, self.ac(), random.Random(), self.v_private.get())
@@ -5052,6 +5190,10 @@ class App(tk.Tk):
         dep = stops[0]
         acf = self.selected_acf()
         if not acf:
+            if self.world_only():
+                raise ValueError(
+                    "There is no X-Plane on this computer, so there are no aircraft to choose from "
+                    "and nothing to set the flight up in.\n\n" + xp_world.NO_SIM)
             raise ValueError("Choose an aircraft first.")
         mode = self.v_start.get()
         if mode == "runway":
@@ -5598,7 +5740,7 @@ class App(tk.Tk):
                                                                    if k not in core.NOT_GENERATED
                                                                    and k != "realwx"]
         if not self.airports:
-            messagebox.showinfo("Ideas", "Airports are still loading.")
+            messagebox.showinfo("Ideas", self.xplane_state())
             return
         opts = self.region_opts(scope)
         seed = random.randrange(1_000_000)
@@ -5664,7 +5806,7 @@ class App(tk.Tk):
     # ======================================================================
     def open_picker(self, scope=None):
         if not self.airports:
-            messagebox.showinfo("Airports", "Airports are still loading.")
+            messagebox.showinfo("Airports", self.xplane_state())
             return
         AirportPicker(self, scope)
 

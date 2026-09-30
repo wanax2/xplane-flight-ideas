@@ -21,6 +21,8 @@ Python + Tkinter, no build step, no account, works offline.
 
 **Or throws a dart at the planet.** "Anywhere on earth" picks a genuinely random destination out of your own scenery, leaning towards ground worth looking at: big relief nearby, high fields, gravel strips, water runways, high latitudes. It tells you what the dice picked and why it might be worth the trip.
 
+**Doesn't actually need X-Plane.** The app is built to read your own scenery — that's the point of it — but on a machine without the simulator it offers to download the OurAirports database instead: around eighty thousand airports worldwide with their runways, surfaces, lighting, thresholds and frequencies, reshaped into exactly the records the apt.dat parser produces. The generator, the scenic engine, the wonders, the approach geometry, the briefings and the exports all work without knowing the difference. What's genuinely missing is ILS (no open equivalent to `earth_nav.dat`, so approaches become RNAV straight-ins), your own aircraft (built-in profiles stand in), and setting the flight up in the sim. Plan on the laptop, save the `.fms`, fly it later on the machine that has X-Plane.
+
 **Uses the scenery you actually installed.** It reads `Custom Scenery` and `scenery_packs.ini` and knows which airports come from add-on packs and which map tiles have ortho or custom mesh. Then it can *favour* those places — or use *only* them. It will also tell you which add-on airports you have never once flown into.
 
 **Sets up the flight in X-Plane.** Through X-Plane 12.4's Web API: aircraft and livery, start on a runway / at a gate / on final / in the air, date and time, weather (mission, real-world, preset, or leave it alone), payload and fuel. The route goes into the GPS through a small companion plugin.
@@ -108,6 +110,7 @@ python xp_flight_ideas.py --wonders-near KBJC        # what's worth seeing near 
 | `xp_images.py` | maps, airport diagrams, sky pictures, photos |
 | `xp_score.py` | landing scoring and the logbook |
 | `xp_history.py` | the weather on a past date, from two archives |
+| `xp_world.py` | every airport on earth, for machines with no X-Plane |
 | `xp_coach.py` | reads the logbook back to you, and rolling currency |
 | `xp_checkride.py` | manoeuvres graded live against real tolerances |
 | `xp_fleet.py` | where each of your aeroplanes was left |
@@ -130,7 +133,7 @@ All optional; the app works with no internet at all, using only your own scenery
 | Source | What for |
 | --- | --- |
 | [aviationweather.gov](https://aviationweather.gov) | current METARs and TAFs |
-| [OurAirports](https://ourairports.com) | city, region, country, airport type, Wikipedia links |
+| [OurAirports](https://ourairports.com) | city, region, country, airport type, Wikipedia links — and the whole airport list when there's no X-Plane |
 | [flightplandatabase.com](https://flightplandatabase.com) | routes shared by other pilots |
 | [OpenSky Network](https://opensky-network.org) | which aircraft are airborne right now |
 | [opentopodata.org](https://www.opentopodata.org) | terrain elevations |
