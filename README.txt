@@ -1,4 +1,4 @@
-X-PLANE FLIGHT IDEAS  v6.10.2
+X-PLANE FLIGHT IDEAS  v6.11
 ========================
 
 Files
@@ -38,6 +38,36 @@ Files
 Keep all the files in one folder. You need Python 3.8 or newer (python.org -
 tick "Add Python to PATH" during install). Nothing else to install.
 
+
+   THE LOOK  (v6.11)
+   The app had grown to eighteen panes and about 250 controls, and the trouble
+   was never the number - it was that everything was a peer, and nothing on
+   screen answered "what shall we do?".
+
+   START is the first tab now: eight cards for the things you actually come here
+   to do - generate ideas, surprise me, fly real weather, fly a day from the
+   past, practise an approach, fly a checkride, see what to practise, pick up a
+   trip. Everything on it is also in the tabs; it is just the short way in. It
+   tells you what your last flight was and where your aeroplane is sitting.
+
+   THE PLAN PANEL folds away. All those boxes down the left - aircraft, area,
+   mission types, how many ideas - are for making an idea, and once you have one
+   they were still taking a quarter of the window on every tab. They now collapse
+   the moment you press Generate, into one line across the top that says what
+   they are set to: "Cessna 172 SP · United States · 40 mission types · 8 ideas".
+   "Change the plan" brings them back, and it remembers which way you left it.
+
+   SET IT UP used to be fifty-one controls in one scrolling pane. The things you
+   change every flight - where you start, the date and time, the weather - are
+   still in front of you. The things you set once - the Web API address, the GPS
+   and scoring options, the .fms file - fold into three lines that still show
+   what they are set to, so nothing is hidden, only quiet.
+
+   ONE VERB PER ACTION. "Set up a flight INTO this weather", "Take off IN it,
+   land here", "Fly from here INTO it" are now "Fly into this weather", "Take off
+   in it", "Fly into it". And the six buttons under Generate that each did
+   something different are one "Surprise me" menu, so the big blue button means
+   something again.
 
    THE LOOK  (v5.0)
    - Light by default, with a "Dark mode" button in the top right corner. It
@@ -798,6 +828,18 @@ WHERE THE ONLINE DATA COMES FROM
    All of them are optional. The app works with no internet at all - it just
    uses your own X-Plane scenery instead.
 
+
+WHAT'S NEW IN 6.11
+   A declutter. No new flying.
+   - A Start tab: eight cards for the things you actually come here to do, with
+     your last flight and where your aeroplane is.
+   - The left-hand plan panel folds away once you have ideas, into one line that
+     says what it is set to. A quarter of the window back on every tab.
+   - "Set it up" went from 51 controls in a scrolling pane to one screen: the
+     per-flight settings in front of you, the set-once ones folded into three
+     lines that still show their values.
+   - One verb per action, and the six buttons under Generate became one
+     "Surprise me" menu.
 
 WHAT'S NEW IN 6.10.2
    - Fixed: on Weather > Real weather now, choosing a continent from the

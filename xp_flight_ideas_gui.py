@@ -326,6 +326,72 @@ class ScrollFrame(ttk.Frame):
         self.cv.yview_scroll(step, "units")
 
 
+class Expander(ttk.Frame):
+    """A titled section you can fold away, with a one-line summary when it's shut.
+
+    Settings you change once a year shouldn't take up the same room as settings you
+    change every flight. Folded, a section is one line that still tells you what it
+    is set to - so nothing is hidden, only quiet.
+    """
+
+    def __init__(self, master, title, summary=None, open_=False, on_toggle=None):
+        super().__init__(master)
+        self.title, self._summary = title, summary or (lambda: "")
+        self.on_toggle = on_toggle
+        self.open = bool(open_)
+        head = ttk.Frame(self)
+        head.pack(fill="x")
+        self.b = ttk.Button(head, text="", style="Quiet.TButton", command=self.toggle, width=0)
+        self.b.pack(side="left")
+        self.l_sum = ttk.Label(head, text="", style="Muted.TLabel")
+        self.l_sum.pack(side="left", padx=(6, 0))
+        self.body = ttk.Frame(self)
+        self.refresh()
+
+    def toggle(self):
+        self.open = not self.open
+        self.refresh()
+        if self.on_toggle:
+            self.on_toggle(self.open)
+
+    def refresh(self):
+        self.b.config(text=("\u25be  " if self.open else "\u25b8  ") + self.title)
+        try:
+            self.l_sum.config(text="" if self.open else self._summary())
+        except Exception:
+            self.l_sum.config(text="")
+        if self.open:
+            self.body.pack(fill="both", expand=True, padx=(14, 0), pady=(2, 0))
+        else:
+            self.body.pack_forget()
+
+
+class Card(ttk.Frame):
+    """One thing you might want to do, as a box you can click anywhere on."""
+
+    def __init__(self, master, theme, title, blurb, command, note=""):
+        super().__init__(master, style="Card.TFrame", padding=(12, 10))
+        self.theme, self.command = theme, command
+        self.t = ttk.Label(self, text=title, font=theme.ui_bold, anchor="w")
+        self.t.pack(fill="x")
+        self.d = ttk.Label(self, text=blurb, style="Muted.TLabel", anchor="w", justify="left",
+                           wraplength=theme.px(230))
+        self.d.pack(fill="x", pady=(2, 0))
+        self.n = ttk.Label(self, text=note, style="Ok.TLabel", anchor="w")
+        if note:
+            self.n.pack(fill="x", pady=(4, 0))
+        for w in (self, self.t, self.d, self.n):
+            w.bind("<Button-1>", lambda e: self.command())
+            w.bind("<Enter>", lambda e: self.configure(cursor="hand2"))
+
+    def set_note(self, text):
+        self.n.config(text=text)
+        if text and not self.n.winfo_ismapped():
+            self.n.pack(fill="x", pady=(4, 0))
+        elif not text and self.n.winfo_ismapped():
+            self.n.pack_forget()
+
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -349,6 +415,9 @@ class App(tk.Tk):
         self.minsize(min(self.theme.px(1000), w), min(self.theme.px(640), h))
         self.after(100, self._pump)
         self.protocol("WM_DELETE_WINDOW", self._close)
+        self.after(40, lambda: self.nb.select(self.tab_start))   # open on "what shall we do?"
+        if not self.cfg.get("left_open", True):
+            self.after(60, lambda: self.toggle_left(False))
         root = core.find_xplane(self.cfg.get("xplane_root"))
         if root:
             self.v_root.set(str(root))
@@ -372,10 +441,18 @@ class App(tk.Tk):
         self.v_theme = tk.StringVar(value="Dark mode" if not self.theme.dark else "Light mode")
         ttk.Button(top, textvariable=self.v_theme, style="Quiet.TButton",
                    command=self.switch_theme).pack(side="right")
+        # What the left panel is set to, so it can be out of the way without being lost
+        self.v_plan = tk.StringVar(value="")
+        self.v_planbtn = tk.StringVar(value="Hide the plan \u25b8")
+        ttk.Button(top, textvariable=self.v_planbtn, style="Quiet.TButton",
+                   command=self.toggle_left).pack(side="right", padx=(0, 10))
+        ttk.Label(top, textvariable=self.v_plan, style="MutedBg.TLabel").pack(side="right", padx=(14, 6),
+                                                                              pady=(4, 0))
 
         pw = ttk.PanedWindow(self, orient="horizontal", style="TPanedwindow")
         pw.pack(fill="both", expand=True, padx=10, pady=(4, 0))
         leftwrap = ScrollFrame(pw, self.theme, width=self.theme.px(352))
+        self.pw, self.leftwrap = pw, leftwrap
         left = leftwrap.inner
         rpw = ttk.PanedWindow(pw, orient="vertical", style="TPanedwindow")
         pw.add(leftwrap, weight=0)
@@ -384,17 +461,230 @@ class App(tk.Tk):
         right = ttk.Frame(rpw, style="Bg.TFrame")
         rpw.add(mid, weight=0)
         rpw.add(right, weight=1)
+        self.rpw, self.mid = rpw, mid
         left.configure(padding=(0, 0, 10, 8))
         self._wx_vars()
         self._build_left(left)
         self._build_mid(mid)
         self._build_right(right)
 
+        self.nb.bind("<<NotebookTabChanged>>", self.on_tab_changed, add="+")
         self.v_status = tk.StringVar(value="Starting...")
         bar = ttk.Frame(self, style="Bg.TFrame", padding=(12, 6))
         bar.pack(fill="x")
         ttk.Label(bar, textvariable=self.v_status, anchor="w", style="Status.TLabel").pack(side="left",
                                                                                            fill="x", expand=True)
+
+
+    # ======================================================================
+    # Start: the answer to "what shall we do?"
+    # ======================================================================
+    def _build_start(self, f):
+        """Not a menu of features - a short list of the things you come here to do."""
+        head = ttk.Frame(f, style="Bg.TFrame")
+        head.pack(fill="x", pady=(2, 2))
+        ttk.Label(head, text="What shall we do?", style="Head.TLabel").pack(side="left")
+        ttk.Button(head, text="Settings...", style="Quiet.TButton",
+                   command=self.settings_window).pack(side="right")
+
+        self.v_resume = tk.StringVar(value="")
+        res = ttk.Frame(f, style="Bg.TFrame")
+        res.pack(fill="x", pady=(0, 8))
+        ttk.Label(res, textvariable=self.v_resume, style="MutedBg.TLabel").pack(side="left")
+        self.b_resume = ttk.Button(res, text="Carry on from there", style="Quiet.TButton",
+                                   command=self.resume_last)
+
+        grid = ttk.Frame(f, style="Bg.TFrame")
+        grid.pack(fill="both", expand=True)
+        self.start_cards = {}
+        cards = [
+            ("generate", "Generate flight ideas",
+             "Say roughly what you fancy and it invents something worth flying, out of your own "
+             "scenery.", self.start_generate),
+            ("surprise", "Surprise me",
+             "Somewhere scenic, a wonder of the world, a dart at the planet, or today's challenge.",
+             self.surprise_menu),
+            ("weather", "Fly real weather",
+             "Every METAR on earth right now, ranked by how nasty it is. Fly into it, or out of it.",
+             lambda: self.goto(self.tab_wx)),
+            ("past", "Fly a day from the past",
+             "Any date, anywhere, back to 1940 - the weather that was really there, hour by hour.",
+             lambda: self.goto(self.tab_wxpast)),
+            ("approach", "Practise an approach",
+             "Straight onto final at any airport, at any distance, in any weather, over and over.",
+             lambda: self.approach_window()),
+            ("checkride", "Fly a checkride",
+             "Eight manoeuvres graded live against real tolerances, one at a time or the whole ride.",
+             lambda: self.goto(self.tab_ck)),
+            ("coach", "What should I practise?",
+             "Your logbook read back to you: what you are worse at, and the flight that fixes it.",
+             lambda: (self.goto(self.tab_coach), self.fill_coach())),
+            ("trips", "Pick up a trip",
+             "Multi-leg journeys you fly over several sessions, a leg at a time.",
+             lambda: self.goto(self.tab_trips)),
+        ]
+        for i, (key, title, blurb, cmd) in enumerate(cards):
+            card = Card(grid, self.theme, title, blurb, cmd)
+            card.grid(row=i // 4, column=i % 4, sticky="new", padx=4, pady=4)
+            self.start_cards[key] = card
+        for col in range(4):
+            grid.columnconfigure(col, weight=1, uniform="cards")
+        grid.rowconfigure(2, weight=1)            # the slack goes below the cards, not inside them
+
+        tip = ttk.Label(f, style="MutedBg.TLabel", justify="left",
+                        text="Everything here is also in the tabs above - this is just the short way in.")
+        tip.pack(anchor="w", pady=(8, 0))
+        self.fill_start()
+
+    def fill_start(self):
+        """Keep the start cards honest about what is actually there."""
+        if not hasattr(self, "start_cards"):
+            return
+        try:
+            n = len(self.logbook.entries)
+        except Exception:
+            n = 0
+        self.start_cards["coach"].set_note(
+            "" if n >= 3 else "needs a few scored flights first")
+        self.start_cards["checkride"].set_note(
+            "" if self.ideas or self.airports else "")
+        try:
+            trips = len(self.trips.trips)
+        except Exception:
+            trips = 0
+        self.start_cards["trips"].set_note(f"{trips} on the go" if trips else "none yet")
+        if self.ideas:
+            self.start_cards["generate"].set_note(f"{len(self.ideas)} ready to look at")
+        else:
+            self.start_cards["generate"].set_note("")
+        # the resume line
+        line = ""
+        try:
+            last = self.logbook.entries[0]
+            when = (time.time() - last.get("time", 0)) / 86400.0
+            ago = "today" if when < 1 else f"{when:.0f} days ago"
+            line = f"Last flight: {last.get('title', '?')} - {ago}"
+            acf = self.selected_acf()
+            where = self.fleet().where(acf) if acf else None
+            if where:
+                line += f"   \u00b7   your {self.ac().get('name', 'aeroplane')} is at {where}"
+        except Exception:
+            line = ""
+        self.v_resume.set(line)
+        try:
+            if line and not self.b_resume.winfo_ismapped():
+                self.b_resume.pack(side="right")
+            elif not line and self.b_resume.winfo_ismapped():
+                self.b_resume.pack_forget()
+        except tk.TclError:
+            pass
+
+    def start_generate(self):
+        """The plan panel is the thing you need for this, so bring it back first."""
+        self.toggle_left(True)
+        if not self.airports:
+            self.v_status.set("Waiting for your scenery to finish loading...")
+            return
+        self.generate()
+        if self.ideas:
+            self.show_brief_tab()         # they were made to be read, not counted
+
+    def resume_last(self):
+        """Put the last flight's aeroplane and airport back in the boxes."""
+        try:
+            last = self.logbook.entries[0]
+        except Exception:
+            return
+        been = [a for a in (last.get("flown_to") or last.get("route") or ()) if a]
+        if been:
+            self.v_from.set(been[-1])
+            self.v_dep.set(been[-1])
+            self.log(f"Starting from {been[-1]}, where {last.get('title', 'the last flight')} finished.")
+        self.toggle_left(True)
+        self.show_brief_tab()
+
+    def on_tab_changed(self, _e=None):
+        """The list of ideas has nothing to say on the start screen."""
+        try:
+            on_start = self.nb.select() == str(self.tab_start)
+            shown = str(self.mid) in self.rpw.panes()
+            if on_start and shown:
+                self.rpw.forget(self.mid)
+            elif not on_start and not shown:
+                self.rpw.insert(0, self.mid, weight=0)
+            if on_start:
+                self.fill_start()
+        except (tk.TclError, AttributeError):
+            pass
+
+    def show_brief_tab(self):
+        """Select the Briefing tab, wherever it has ended up."""
+        try:
+            self.nb.select(self.tab_brief)
+        except (tk.TclError, AttributeError):
+            pass
+
+    # ======================================================================
+    # The plan panel: everything about the next idea, out of the way once made
+    # ======================================================================
+    SURPRISES = [
+        ("Somewhere scenic", "scenic_surprise", "A hand-picked scenic route, or a gem found in your own scenery."),
+        ("Anywhere on earth", "anywhere", "A dart at the planet, leaning towards ground worth looking at."),
+        ("A wonder of the world", "wonders_near", "The nearest of 429 natural wonders you can reach."),
+        ("Weather worth respecting", "dangerous_weather", "The worst weather being reported anywhere right now."),
+        ("Today's challenge", "daily_challenge", "The same one for everyone today."),
+    ]
+
+    def surprise_menu(self):
+        m = tk.Menu(self, tearoff=0)
+        for label, fn, why in self.SURPRISES:
+            m.add_command(label=f"{label}   -   {why}", command=getattr(self, fn))
+        self._popup(m)
+
+    def toggle_left(self, show=None):
+        """Fold the left panel away, or bring it back."""
+        want = (not self.left_open()) if show is None else bool(show)
+        try:
+            if want:
+                if not self.pw.panes() or str(self.leftwrap) not in self.pw.panes():
+                    self.pw.insert(0, self.leftwrap, weight=0)
+            else:
+                if str(self.leftwrap) in self.pw.panes():
+                    self.pw.forget(self.leftwrap)
+        except tk.TclError:
+            return
+        self.v_planbtn.set("Hide the plan \u25b8" if want else "\u25c2 Change the plan")
+        self.update_plan_line()
+        core.save_config(left_open=want)
+
+    def left_open(self):
+        try:
+            return str(self.leftwrap) in self.pw.panes()
+        except (tk.TclError, AttributeError):
+            return True
+
+    def update_plan_line(self):
+        """The one line that stands in for the whole panel when it is folded away."""
+        if not hasattr(self, "v_plan"):
+            return
+        if self.left_open():
+            self.v_plan.set("")
+            return
+        bits = []
+        try:
+            ac = self.ac()
+            bits.append(ac.get("name", "") or "aircraft")
+        except Exception:
+            pass
+        try:
+            bits.append(self.area_text())
+        except Exception:
+            pass
+        n = len([k for k, v in self.v_miss.items() if v.get()])
+        bits.append("every mission type" if not n else f"{n} mission type" + ("" if n == 1 else "s"))
+        if self.ideas:
+            bits.append(f"{len(self.ideas)} ideas")
+        self.v_plan.set("  \u00b7  ".join(b for b in bits if b))
 
     def switch_theme(self):
         mode = self.theme.toggle()
@@ -573,16 +863,14 @@ class App(tk.Tk):
         ttk.Button(f, text="Generate ideas", style="Big.TButton",
                    command=self.generate).pack(fill="x", pady=(8, 6))
 
+        # Six buttons competing with Generate made it six primary actions and no
+        # primary action. One menu, and the big blue button means something again.
         qb = ttk.Frame(f, style="Bg.TFrame")
         qb.pack(fill="x")
-        for i, (txt, cmd) in enumerate([("Scenic surprise", self.scenic_surprise),
-                                        ("Anywhere on earth", self.anywhere),
-                                        ("Wonders near me", self.wonders_near),
-                                        ("Bad weather now", self.dangerous_weather),
-                                        ("Today's challenge", self.daily_challenge),
-                                        ("Browse airports", self.open_picker)]):
-            ttk.Button(qb, text=txt, style="Quiet.TButton", command=cmd).grid(
-                row=i // 2, column=i % 2, sticky="ew", padx=(0, 4) if i % 2 == 0 else 0, pady=2)
+        ttk.Button(qb, text="Surprise me  \u25be", style="Quiet.TButton",
+                   command=self.surprise_menu).grid(row=0, column=0, sticky="ew", padx=(0, 4), pady=2)
+        ttk.Button(qb, text="Browse airports", style="Quiet.TButton",
+                   command=self.open_picker).grid(row=0, column=1, sticky="ew", pady=2)
         qb.columnconfigure(0, weight=1)
         qb.columnconfigure(1, weight=1)
 
@@ -670,9 +958,15 @@ class App(tk.Tk):
         nb = ttk.Notebook(f)
         nb.pack(fill="both", expand=True)
         self.nb = nb
+        # --- Start: what shall we do? ---
+        t0 = ttk.Frame(nb, padding=(8, 6), style="Bg.TFrame")
+        nb.add(t0, text="Start")
+        self._build_start(t0)
+        self.tab_start = t0
         # --- Briefing tab ---
         t1 = ttk.Frame(nb, padding=4)
         nb.add(t1, text="Briefing")
+        self.tab_brief = t1
         bb = ttk.Frame(t1)
         bb.pack(side="bottom", fill="x", pady=4)
         bp = ttk.PanedWindow(t1, orient="horizontal")
@@ -686,8 +980,8 @@ class App(tk.Tk):
         bp.add(tf, weight=1)
         bp.add(pf, weight=1)
         self._build_pictures(pf)
-        ttk.Button(bb, text="Set up this flight  \u203a\u203a", style="Big.TButton",
-                   command=lambda: nb.select(1)).pack(side="right", padx=(8, 0))
+        ttk.Button(bb, text="Set this flight up  \u203a\u203a", style="Big.TButton",
+                   command=lambda: self.goto(self.tab_fly)).pack(side="right", padx=(8, 0))
         ttk.Button(bb, text="Copy", style="Quiet.TButton",
                    command=self.copy_brief).pack(side="left", padx=(0, 3))
         ttk.Button(bb, text="Save \u25be", style="Quiet.TButton",
@@ -702,6 +996,7 @@ class App(tk.Tk):
         t2 = t2wrap.inner
         t2.configure(padding=(8, 6, 14, 10))
         self._build_launch(t2)
+        self.tab_fly = self._home_of(t2wrap, nb, fly)
         t8 = ttk.Frame(fly, padding=6)
         fly.add(t8, text="In flight")
         self._build_live_flight(t8)
@@ -918,13 +1213,37 @@ class App(tk.Tk):
         self._photo_req = 0
         self._resize_job = {}
 
+    def extras_line(self):
+        """What the folded 'route, twist, failures and scoring' section is set to."""
+        bits = []
+        try:
+            if self.v_loadroute.get():
+                bits.append("route to the GPS")
+            if self.v_arm.get():
+                bits.append("twist armed")
+            if self.v_grade.get():
+                bits.append("scoring on")
+            if self.v_monitor.get():
+                bits.append("live progress")
+            if self.v_surprise.get():
+                bits.append("surprise failures")
+        except AttributeError:
+            return ""
+        return ", ".join(bits) or "all off"
+
     def _build_launch(self, f):
         c = self.cfg
-        # connection
-        g = ttk.LabelFrame(f, text="Connection (X-Plane 12.4+ Web API)", padding=6)
-        g.grid(row=0, column=0, columnspan=2, sticky="ew")
+        # connection - set once, so it folds away with its setting on the line
         self.v_host = tk.StringVar(value=c.get("host", "127.0.0.1"))
         self.v_port = tk.StringVar(value=str(c.get("port", 8086)))
+        ex = Expander(f, "X-Plane connection",
+                      summary=lambda: f"{self.v_host.get()}:{self.v_port.get()}",
+                      open_=bool(c.get("open_conn", False)),
+                      on_toggle=lambda o: core.save_config(open_conn=o))
+        ex.grid(row=0, column=0, columnspan=2, sticky="ew")
+        self.ex_conn = ex
+        g = ttk.Frame(ex.body)
+        g.pack(fill="x")
         ttk.Label(g, text="Host:").pack(side="left")
         ttk.Entry(g, textvariable=self.v_host, width=14).pack(side="left")
         ttk.Label(g, text=" Port:").pack(side="left")
@@ -1031,7 +1350,12 @@ class App(tk.Tk):
         g.columnconfigure(1, weight=1)
 
         # route / extras
-        g = ttk.LabelFrame(f, text="Route and twist", padding=6)
+        ex = Expander(f, "Route, twist, failures and scoring", summary=self.extras_line,
+                      open_=bool(c.get("open_extras", False)),
+                      on_toggle=lambda o: core.save_config(open_extras=o))
+        ex.grid(row=4, column=0, columnspan=2, sticky="ew", pady=4)
+        self.ex_extras = ex
+        g = ttk.LabelFrame(ex.body, text="Route and twist", padding=6)
         g.grid(row=3, column=0, columnspan=2, sticky="ew", pady=4)
         self.v_loadroute = tk.BooleanVar(value=c.get("loadroute", True))
         self.v_arm = tk.BooleanVar(value=True)
@@ -1090,17 +1414,24 @@ class App(tk.Tk):
         g.columnconfigure(1, weight=1)
 
         # --- flight-plan file (.fms) options ---
-        gf = ttk.LabelFrame(f, text="Flight plan file (.fms)", padding=6)
-        gf.grid(row=5, column=0, columnspan=2, sticky="ew", pady=4)
         self.v_fmssave = tk.BooleanVar(value=c.get("fms_save", True))
+        exf = Expander(f, "Flight plan file (.fms)",
+                       summary=lambda: ("saved with every flight" if self.v_fmssave.get()
+                                        else "not saved"),
+                       open_=bool(c.get("open_fms", False)),
+                       on_toggle=lambda o: core.save_config(open_fms=o))
+        exf.grid(row=5, column=0, columnspan=2, sticky="ew", pady=4)
+        self.ex_fms = exf
+        gf = ttk.Frame(exf.body)
+        gf.pack(fill="x")
         self.v_fmsdir = tk.StringVar(value=c.get("fms_dir", ""))
         self.v_fmsname = tk.StringVar(value=c.get("fms_name", "IDEA_{from}_{to}"))
         ttk.Checkbutton(gf, text="Save a .fms file when I launch a flight", variable=self.v_fmssave,
                         command=self.update_fms_label).pack(side="left")
         ttk.Button(gf, text="Where and what name...", command=self.fms_options).pack(side="right")
         ttk.Button(gf, text="Save one now", command=lambda: self.save_fms(force=True)).pack(side="right", padx=4)
-        self.l_fms = ttk.Label(f, text="", style="Muted.TLabel", wraplength=700, justify="left")
-        self.l_fms.grid(row=6, column=0, columnspan=2, sticky="w")
+        self.l_fms = ttk.Label(exf.body, text="", style="Muted.TLabel", wraplength=700, justify="left")
+        self.l_fms.pack(fill="x", anchor="w")
         for v in (self.v_fmsdir, self.v_fmsname):
             v.trace_add("write", lambda *a: self.update_fms_label())
 
@@ -1111,12 +1442,26 @@ class App(tk.Tk):
         ttk.Button(b, text="Stop monitor", command=self.stop_monitor).pack(side="left")
         ttk.Button(b, text="Repair failures", command=self.repair).pack(side="left", padx=6)
         self.v_live = tk.StringVar(value="")
-        ttk.Label(f, textvariable=self.v_live, font=MONO, foreground=self.theme.c["ok"]).grid(row=5, column=0, columnspan=2, sticky="w")
+        ttk.Label(f, textvariable=self.v_live, font=MONO,
+                  foreground=self.theme.c["ok"]).grid(row=8, column=0, columnspan=2, sticky="w")
         self.v_live2 = tk.StringVar(value="")
-        ttk.Label(f, textvariable=self.v_live2, font=MONO, foreground=self.theme.c["warn"]).grid(row=6, column=0, columnspan=2,
-                                                                                  sticky="w")
+        ttk.Label(f, textvariable=self.v_live2, font=MONO,
+                  foreground=self.theme.c["warn"]).grid(row=9, column=0, columnspan=2, sticky="w")
         f.columnconfigure(0, weight=1)
         f.columnconfigure(1, weight=1)
+        # the summaries are written by variables that didn't exist when the
+        # expanders were built, so ask them again now that everything is here
+        for ex in (self.ex_conn, self.ex_extras, self.ex_fms):
+            ex.refresh()
+        for v in (self.v_loadroute, self.v_arm, self.v_grade, self.v_monitor, self.v_surprise,
+                  self.v_fmssave, self.v_host, self.v_port):
+            v.trace_add("write", lambda *a: self.refresh_setup_summaries())
+
+    def refresh_setup_summaries(self):
+        for name in ("ex_conn", "ex_extras", "ex_fms"):
+            ex = getattr(self, name, None)
+            if ex is not None:
+                ex.refresh()
 
     # ======================================================================
     # Helpers
@@ -1469,6 +1814,7 @@ class App(tk.Tk):
             self.fill_coach()
         except Exception as e:
             self.log(f"Coach: {e}")
+        self.fill_start()
         self.v_status.set("Ready - pick your settings and press Generate ideas.")
 
     # ======================================================================
@@ -2066,7 +2412,7 @@ class App(tk.Tk):
             self.set_missions([m])
             self.update_miss_label()
             self.generate()
-            self.nb.select(0)
+            self.show_brief_tab()
             self.log(f"Coach: generating {core.MISSION_NAMES.get(m, m)} flights.")
 
     # ======================================================================
@@ -2411,7 +2757,7 @@ class App(tk.Tk):
             v.trace_add("write", lambda *a: self.debounce("wxshop", self.draw_wxshop, 250))
 
     def goto_fly(self):
-        self.nb.select(1)
+        self.goto(self.tab_fly)
 
     def wx_layers_from_sky(self, enable=True):
         """Fill the layer boxes from whatever the Sky preset is now."""
@@ -2622,7 +2968,7 @@ class App(tk.Tk):
         self.sync_wx_to_idea(idea)
         self.l_haz.config(text=f"{h['name']} at {dest['id']}")
         self.log(f"Inclement weather flight: {idea.title}")
-        self.nb.select(1 if setup else 0)
+        self.goto(self.tab_fly) if setup else self.show_brief_tab()
 
     def _across_runway(self, apt, rng):
         """A wind direction that puts the wind across the best runway here."""
@@ -2993,7 +3339,7 @@ class App(tk.Tk):
         self.generate()                       # generating picks its own weather...
         self.hist_use(show=False)             # ...so the archive goes in afterwards
         self.sync_idea_wx_from_boxes()
-        self.nb.select(0)
+        self.show_brief_tab()
 
     def sync_idea_wx_from_boxes(self):
         """Give every generated idea the weather that is in the boxes."""
@@ -3688,7 +4034,7 @@ class App(tk.Tk):
                 return
             win.destroy()
             self._add_idea(idea)
-            self.nb.select(1 if setup else 0)
+            self.goto(self.tab_fly) if setup else self.show_brief_tab()
 
         ttk.Button(head, text="Refresh", style="Quiet.TButton", command=fill).pack(side="right")
         b = ttk.Frame(win, padding=(12, 0, 12, 10))
@@ -3864,6 +4210,9 @@ class App(tk.Tk):
         self.lb.selection_set(0)
         self.on_select()
         self.log(f"Generated {len(ideas)} ideas (seed {seed}, {len(self.gen.pool):,} usable airports).")
+        self.fill_start()
+        if self.cfg.get("fold_after_generate", True):
+            self.toggle_left(False)        # the panel has done its job; give the room back
 
     def _generate_after_wx(self, ok):
         self._gen_waiting = False
@@ -3988,9 +4337,9 @@ class App(tk.Tk):
         self.tv_near.bind("<Double-1>", lambda e: self.wx_make_idea(False, use_nearby=True))
         nb2 = ttk.Frame(nf)
         nb2.pack(fill="x", pady=(3, 0))
-        ttk.Button(nb2, text="Fly from here INTO it >>",
+        ttk.Button(nb2, text="Fly into it",
                    command=lambda: self.wx_make_idea(False, use_nearby=True)).pack(side="left")
-        ttk.Button(nb2, text="Take off IN it, land here >>",
+        ttk.Button(nb2, text="Take off in it",
                    command=lambda: self.wx_make_idea(True, use_nearby=True)).pack(side="left", padx=4)
         ttk.Button(nb2, text="Approach into it...", style="Quiet.TButton",
                    command=self.approach_into_weather).pack(side="left", padx=4)
@@ -4007,9 +4356,9 @@ class App(tk.Tk):
         self.l_alts.pack(anchor="w")
         b = ttk.Frame(bot)
         b.pack(fill="x", pady=4)
-        ttk.Button(b, text="Set up a flight INTO this weather  >>", style="Big.TButton",
+        ttk.Button(b, text="Fly into this weather", style="Big.TButton",
                    command=lambda: self.wx_make_idea(False)).pack(side="left")
-        ttk.Button(b, text="Take off IN this weather  >>", style="Big.TButton",
+        ttk.Button(b, text="Take off in this weather", style="Big.TButton",
                    command=lambda: self.wx_make_idea(True)).pack(side="left", padx=6)
         self.v_wxgoto = tk.BooleanVar(value=c.get("wx_goto", True))
         ttk.Checkbutton(b, text="then open the 'Fly it' tab", variable=self.v_wxgoto).pack(side="left", padx=6)
@@ -4298,7 +4647,7 @@ class App(tk.Tk):
         self.lb.selection_set("end")
         self.lb.see("end")
         self.on_select()
-        self.nb.select(1 if self.v_wxgoto.get() else 0)
+        self.goto(self.tab_fly) if self.v_wxgoto.get() else self.show_brief_tab()
         self.log(f"New flight: {idea.title}. Weather set to X-Plane real-world weather and your computer's clock "
                  f"- change it on the 'Fly it' tab if you like.")
 
@@ -4430,7 +4779,7 @@ class App(tk.Tk):
                                     "Nothing matched - try 'Whole world', or tick more scenery types.")
                 return
             self._add_idea(ideas[0])
-            self.nb.select(0)
+            self.show_brief_tab()
             self.log(f"Anywhere on earth: {ideas[0].title}")
         self._scenic_run(1, done, force_random=True)
 
@@ -4442,7 +4791,7 @@ class App(tk.Tk):
                                     "Nothing matched - try more scenery types or 'Whole world'.")
                 return
             self._add_idea(ideas[0])
-            self.nb.select(0)
+            self.show_brief_tab()
             self.log(f"Scenic surprise: {ideas[0].title}")
         self._scenic_run(1, done)
 
@@ -4480,7 +4829,7 @@ class App(tk.Tk):
             messagebox.showinfo("Scenic world", "Press 'Show me' and pick one first.")
             return
         self._add_idea(i)
-        self.nb.select(1 if setup else 0)
+        self.goto(self.tab_fly) if setup else self.show_brief_tab()
 
     def _add_idea(self, idea):
         if not self.gen:
@@ -5721,7 +6070,7 @@ class App(tk.Tk):
             messagebox.showerror("Online flights", f"Couldn't use that plan:\n{err}")
             return
         self._add_idea(idea)
-        self.nb.select(0)
+        self.show_brief_tab()
         self.log("Imported " + idea.title)
 
     def online_fms(self):
@@ -5783,7 +6132,7 @@ class App(tk.Tk):
             return
         self.l_sky.config(text=f"{n} light aircraft airborne in that area - picked one.")
         self._add_idea(idea)
-        self.nb.select(0)
+        self.show_brief_tab()
         self.log("Built a flight from real traffic: " + idea.title)
 
     def online_web(self):
@@ -5861,7 +6210,7 @@ class App(tk.Tk):
         sb.pack(side="right", fill="y")
         v["lb"].pack(fill="both", expand=True)
         v["lb"].bind("<<ListboxSelect>>", lambda e: self.region_pick(scope))
-        v["lb"].bind("<Double-1>", lambda e: (self.region_pick(scope), self.nb.select(0)))
+        v["lb"].bind("<Double-1>", lambda e: (self.region_pick(scope), self.show_brief_tab()))
         rf = ttk.Frame(body)
         v["cv"] = tk.Canvas(rf, height=self.theme.px(260), background="#e9eef1")
         self.theme.track(v["cv"], "canvas")
@@ -5872,9 +6221,9 @@ class App(tk.Tk):
         body.add(rf, weight=3)
         b2 = ttk.Frame(f)
         b2.pack(fill="x")
-        ttk.Button(b2, text="Open briefing", command=lambda: (self.region_pick(scope), self.nb.select(0))).pack(side="left")
+        ttk.Button(b2, text="Open briefing", command=lambda: (self.region_pick(scope), self.show_brief_tab())).pack(side="left")
         ttk.Button(b2, text="Set up in X-Plane  >>", style="Big.TButton",
-                   command=lambda: (self.region_pick(scope), self.nb.select(1))).pack(side="left", padx=6)
+                   command=lambda: (self.region_pick(scope), self.goto(self.tab_fly))).pack(side="left", padx=6)
         v["ideas"] = []
         setattr(self, "rt_" + scope, v)
 
@@ -5959,7 +6308,7 @@ class App(tk.Tk):
                                      "w_state": v["state"].get()})})
         if open_it:
             self.region_pick(scope)
-            self.nb.select(0)
+            self.show_brief_tab()
 
     def _region_sel(self, scope):
         v = getattr(self, "rt_" + scope)
@@ -6165,7 +6514,7 @@ class App(tk.Tk):
         idea.title = f"Challenge of the day ({day}): {idea.title}"
         idea.notes.append("Everyone with the same settings gets this same flight today. Beat your own score.")
         self._add_idea(idea)
-        self.nb.select(0)
+        self.show_brief_tab()
 
     # ---- share codes ----------------------------------------------------------
     def import_share(self):
@@ -6180,7 +6529,7 @@ class App(tk.Tk):
             messagebox.showerror("Share code", f"Couldn't read that share code.\n\n{e}")
             return
         self._add_idea(idea)
-        self.nb.select(0)
+        self.show_brief_tab()
         self.log("Imported a shared flight: " + idea.title)
 
     # ======================================================================
@@ -6707,7 +7056,7 @@ class App(tk.Tk):
         self.tv_leg.pack(fill="both", expand=True)
         b = ttk.Frame(rf)
         b.pack(fill="x", pady=4)
-        ttk.Button(b, text="Fly this leg  >>", style="Big.TButton", command=self.trip_fly).pack(side="left")
+        ttk.Button(b, text="Fly this leg", style="Big.TButton", command=self.trip_fly).pack(side="left")
         ttk.Button(b, text="Mark flown", command=lambda: self.trip_mark(True)).pack(side="left", padx=4)
         ttk.Button(b, text="Mark not flown", command=lambda: self.trip_mark(False)).pack(side="left")
         body.add(lf, weight=2)
@@ -6870,7 +7219,7 @@ class App(tk.Tk):
         idea.mission = t.get("mission") or idea.mission
         self._trip_leg = (t, leg)
         self._add_idea(idea)
-        self.nb.select(1)
+        self.goto(self.tab_fly)
 
     def stop_monitor(self):
         if self.monitor:

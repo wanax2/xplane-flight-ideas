@@ -6,7 +6,11 @@ It reads your own X-Plane scenery and aircraft, invents a flight worth making �
 
 Python + Tkinter, no build step, no account, works offline.
 
+It opens on a **Start** screen — eight cards for the things you actually come here to do — and the planning panel folds away into a single line the moment you've got what you asked for.
+
 ![The briefing, the map and the performance numbers](docs/screenshot-light.png)
+
+![The start screen](docs/screenshot-start.png)
 
 
 ---
