@@ -1,4 +1,4 @@
-X-PLANE FLIGHT IDEAS  v6.10.1
+X-PLANE FLIGHT IDEAS  v6.10.2
 ========================
 
 Files
@@ -798,6 +798,14 @@ WHERE THE ONLINE DATA COMES FROM
    All of them are optional. The app works with no internet at all - it just
    uses your own X-Plane scenery instead.
 
+
+WHAT'S NEW IN 6.10.2
+   - Fixed: on Weather > Real weather now, choosing a continent from the
+     "worldwide" dropdown did not select the "worldwide" radio button next to it,
+     so Find went on searching around an airport you had never named - and said
+     so, while the box in front of you said "Whole world". Touching any of the
+     three now picks that one: the radius box and the airport box select
+     "within", the continent list selects "worldwide".
 
 WHAT'S NEW IN 6.10.1
    - Fixed: picking a particular hazard on Weather > Real weather now - "Anything

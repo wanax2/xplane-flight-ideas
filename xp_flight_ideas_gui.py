@@ -3902,15 +3902,26 @@ class App(tk.Tk):
         self.v_wxscope = tk.StringVar(value=c.get("wx_scope", "near"))
         ttk.Radiobutton(q, text="within", value="near", variable=self.v_wxscope).pack(side="left", padx=(8, 0))
         self.v_wxrad = tk.StringVar(value=str(int(c.get("wx_radius", 300))))
-        ttk.Spinbox(q, textvariable=self.v_wxrad, from_=25, to=2000, increment=25, width=5).pack(side="left")
+        sp_rad = ttk.Spinbox(q, textvariable=self.v_wxrad, from_=25, to=2000, increment=25, width=5)
+        sp_rad.pack(side="left")
         ttk.Label(q, text="nm of").pack(side="left")
         self.v_wxhome = tk.StringVar(value=c.get("wx_home", "") or c.get("from", "") or c.get("near", ""))
-        ttk.Entry(q, textvariable=self.v_wxhome, width=7).pack(side="left", padx=2)
+        e_home = ttk.Entry(q, textvariable=self.v_wxhome, width=7)
+        e_home.pack(side="left", padx=2)
         ttk.Radiobutton(q, text="my region", value="region", variable=self.v_wxscope).pack(side="left", padx=(8, 0))
         ttk.Radiobutton(q, text="worldwide:", value="world", variable=self.v_wxscope).pack(side="left", padx=(8, 0))
         self.v_wxarea = tk.StringVar(value=c.get("wx_area", "Whole world"))
-        ttk.Combobox(q, textvariable=self.v_wxarea, values=list(livewx.CONTINENTS), state="readonly",
-                     width=24).pack(side="left", padx=2)
+        cb_area = ttk.Combobox(q, textvariable=self.v_wxarea, values=list(livewx.CONTINENTS),
+                               state="readonly", width=24)
+        cb_area.pack(side="left", padx=2)
+        # Touching one of these three is how you say which one you mean. Leaving the
+        # radio button behind is how you end up searching round an airport you never
+        # named while looking straight at "Whole world".
+        for w, scope in ((sp_rad, "near"), (e_home, "near"), (cb_area, "world")):
+            w.bind("<Key>", lambda e, s=scope: self.v_wxscope.set(s), add="+")
+            w.bind("<Button-1>", lambda e, s=scope: self.v_wxscope.set(s), add="+")
+        cb_area.bind("<<ComboboxSelected>>", lambda e: self.v_wxscope.set("world"), add="+")
+        sp_rad.configure(command=lambda: self.v_wxscope.set("near"))
         ttk.Button(q, text="Find", style="Big.TButton", command=self.find_weather).pack(side="right")
         q2 = ttk.Frame(f)
         q2.pack(fill="x")
@@ -4079,8 +4090,10 @@ class App(tk.Tk):
             home = self.gen.find(self.v_wxhome.get())
             if not home:
                 if not quiet:
-                    messagebox.showinfo("Live weather", "Type the airport to search around (e.g. your home field), "
-                                                        "or choose 'anywhere in my region'.")
+                    messagebox.showinfo("Live weather",
+                                        "\"within ... nm of\" is selected but there's no airport in the "
+                                        "box.\n\nType one to search around (your home field, say), or "
+                                        "pick \"my region\" or \"worldwide\" instead.")
                 return
             maxnm = self.num(self.v_wxrad, 300)
         kind = self.hazard_key()
