@@ -433,7 +433,8 @@ class Day:
                 f"G{o['wgst']:.0f}" if o.get("wgst") else "")
             bits = f"{ceil}, {o['vis']:g} SM, {wind}"
             if o.get("wx"):
-                bits += f", {o['wx']}"
+                said = getattr(wx_mod, "decode_wx", lambda c: "")(o["wx"])
+                bits += f", {said or o['wx']}"
             if o.get("temp") is not None:
                 bits += f", {o['temp']:.0f}°C"
             out.append((h, f.get("cat") or "", bits, o.get("raw") or ""))

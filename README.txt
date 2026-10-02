@@ -1,4 +1,4 @@
-X-PLANE FLIGHT IDEAS  v6.11
+X-PLANE FLIGHT IDEAS  v6.12
 ========================
 
 Files
@@ -815,6 +815,8 @@ TROUBLESHOOTING
 
 WHERE THE ONLINE DATA COMES FROM
    aviationweather.gov          current METARs and TAFs (US government, free)
+                                (the codes are decoded into English for you -
+                                 -SN BR reads as "light snow, mist")
    opensky-network.org          which aircraft are airborne right now (free)
    flightplandatabase.com       routes shared by other pilots (free API)
    davidmegginson.github.io/ourairports-data
@@ -828,6 +830,16 @@ WHERE THE ONLINE DATA COMES FROM
    All of them are optional. The app works with no internet at all - it just
    uses your own X-Plane scenery instead.
 
+
+WHAT'S NEW IN 6.12
+   - The METAR present-weather codes are read out loud everywhere they appear:
+     -SN BR is "light snow, mist", +TSRA is "thunderstorm with heavy rain",
+     FZFG is "freezing fog", -SHRASN is "light rain and snow showers". The
+     "Weather" column on Real weather now, the hour-by-hour list on A day in the
+     past, and the briefing all say it in words.
+   - Where a raw METAR is on the screen anyway - the read-out on A day in the
+     past - the code stays and the English goes in brackets after it, so you can
+     still read the thing itself.
 
 WHAT'S NEW IN 6.11
    A declutter. No new flying.

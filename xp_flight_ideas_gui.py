@@ -3291,7 +3291,8 @@ class App(tk.Tk):
             L.append(f"Temperature  {o['temp']:.0f}\u00b0C{dp}")
         L.append(f"Altimeter    {o.get('altim', 29.92):.2f} inHg")
         if o.get("wx"):
-            L.append(f"Weather      {o['wx']}")
+            said = livewx.decode_wx(o["wx"])
+            L.append(f"Weather      {o['wx']}" + (f"   ({said})" if said else ""))
         L.append("")
         elev = self.hist_elev()
         fz = w.freezing_level(elev)
@@ -4288,12 +4289,12 @@ class App(tk.Tk):
         lf = ttk.Frame(body)
         cols = ("apt", "name", "where", "dist", "cat", "wind", "vis", "ceil", "wx", "score")
         heads = ("Airport", "Name", "Where", "nm", "Cat", "Wind", "Vis", "Ceiling", "Weather", "Score")
-        widths = (68, 170, 90, 45, 50, 90, 45, 68, 80, 52)
+        widths = (66, 150, 78, 42, 48, 88, 42, 62, 190, 50)   # 'Weather' now holds words
         self.tv = ttk.Treeview(lf, columns=cols, show="headings", selectmode="browse")
         for col, h, w in zip(cols, heads, widths):
             self.tv.heading(col, text=h, command=lambda c=col: self.sort_weather(c))
             self.tv.column(col, width=w, anchor="w" if col in ("apt", "name", "wind", "wx") else "center",
-                           stretch=col == "name")
+                           stretch=col in ("name", "wx"))
         for cat, colr in livewx.CAT_COLOR.items():
             if cat:
                 self.tv.tag_configure(cat, foreground=colr)
@@ -4515,7 +4516,9 @@ class App(tk.Tk):
             name = a["name"] + (f"  (METAR {o['id']}, {r['apt_dist']:.0f} nm)" if o["id"] != a["id"] else "")
             where = a.get("state") or a.get("iso") or a.get("city") or ""
             self.tv.insert("", "end", iid=str(i), values=(a["id"], name, where, dist, o.get("cat") or "", wind, vis, ceil,
-                                                          o.get("wx") or ("CB" if o.get("cb") else ""), r["score"]),
+                                                          livewx.wx_words(o)
+                                                          or ("thundery cloud" if o.get("cb") else ""),
+                                                          r["score"]),
                            tags=(o.get("cat") or "",))
 
     def sort_weather(self, col):

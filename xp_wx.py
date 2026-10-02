@@ -232,6 +232,78 @@ class MetarSource:
 # ==========================================================================
 # Scoring
 # ==========================================================================
+# ==========================================================================
+# Reading the present-weather codes out loud
+# ==========================================================================
+# A METAR group is [intensity][descriptor][phenomena...], e.g. -SHRASN is
+# "light showers of rain and snow". These three tables are the whole language.
+WX_INTENSITY = {"-": "light", "+": "heavy", "VC": "in the vicinity"}
+WX_DESCRIPTOR = {"MI": "shallow", "BC": "patches of", "PR": "partial", "DR": "low drifting",
+                 "BL": "blowing", "SH": "showers of", "TS": "thunderstorm with", "FZ": "freezing"}
+WX_PHENOMENA = {
+    "DZ": "drizzle", "RA": "rain", "SN": "snow", "SG": "snow grains", "IC": "ice crystals",
+    "PL": "ice pellets", "GR": "hail", "GS": "small hail", "UP": "unknown precipitation",
+    "BR": "mist", "FG": "fog", "FU": "smoke", "VA": "volcanic ash", "DU": "widespread dust",
+    "SA": "sand", "HZ": "haze", "PY": "spray", "PO": "dust whirls", "SQ": "squalls",
+    "FC": "funnel cloud", "SS": "sandstorm", "DS": "duststorm",
+}
+# a few that read badly built up from the parts
+WX_SET = {"TS": "thunderstorm", "VCTS": "thunderstorm in the vicinity", "+FC": "tornado or waterspout",
+          "SH": "showers", "FZFG": "freezing fog", "BLSN": "blowing snow", "MIFG": "shallow fog",
+          "VCSH": "showers in the vicinity", "-DZ": "light drizzle"}
+_GROUP = re.compile(r"^(-|\+|VC)?(MI|BC|PR|DR|BL|SH|TS|FZ)?((?:DZ|RA|SN|SG|IC|PL|GR|GS|UP|BR|FG|FU|"
+                    r"VA|DU|SA|HZ|PY|PO|SQ|FC|SS|DS)+)?$")
+
+
+def decode_group(g):
+    """One present-weather group -> plain English. '' if it isn't one."""
+    g = (g or "").strip().upper()
+    if not g:
+        return ""
+    if g in WX_SET:
+        return WX_SET[g]
+    m = _GROUP.match(g)
+    if not m:
+        return ""
+    intensity, desc, phen = m.group(1), m.group(2), m.group(3) or ""
+    kinds = [WX_PHENOMENA[phen[i:i + 2]] for i in range(0, len(phen), 2)
+             if phen[i:i + 2] in WX_PHENOMENA]
+    if not kinds and not desc:
+        return ""
+    if len(kinds) > 1:
+        what = ", ".join(kinds[:-1]) + " and " + kinds[-1]
+    else:
+        what = kinds[0] if kinds else ""
+    strength = WX_INTENSITY.get(intensity, "") if intensity in ("-", "+") else ""
+    if desc == "TS":
+        # +TSRA is a thunderstorm with HEAVY RAIN, not a heavy thunderstorm
+        what = "thunderstorm with " + (strength + " " + what).strip() if what else "thunderstorm"
+        strength = ""
+    elif desc == "SH":
+        # -SHRA is light rain showers; "showers" goes on the end where it sounds right
+        what = (what + " showers").strip() if what else "showers"
+    elif desc:
+        what = (WX_DESCRIPTOR[desc] + " " + what).strip() if what else WX_DESCRIPTOR[desc]
+    if intensity == "VC":
+        return (what + " in the vicinity").strip()
+    return (strength + " " + what).strip() if strength else what
+
+
+def decode_wx(code):
+    """'-SN BR' -> 'light snow, mist'. Unknown groups are left out."""
+    out = []
+    for g in (code or "").split():
+        said = decode_group(g)
+        if said and said not in out:
+            out.append(said)
+    return ", ".join(out)
+
+
+def wx_words(o):
+    """The present weather of an observation, in English. '' when there is none."""
+    return decode_wx(o.get("wx") or "")
+
+
 def hazards(o):
     """Dict of hazard -> strength (0..~5) for one observation."""
     wx = (o.get("wx") or "").upper()
@@ -332,7 +404,7 @@ def describe(o):
     if o.get("ceiling") is not None:
         parts.append(f"ceiling {o['ceiling']:,.0f} ft")
     if o.get("wx"):
-        parts.append(o["wx"])
+        parts.append(wx_words(o) or o["wx"])
     return ", ".join(parts)
 
 
@@ -436,7 +508,8 @@ def to_wx(o, core):
     if vis is None:
         vis = 10
     clouds_txt = " ".join(f"{c}{int(b):,}" for c, b in o["clouds"] if b is not None) or "no clouds reported"
-    text = f"Live METAR {o['id']} ({o.get('cat') or '?'}): {clouds_txt}" + (f", {o['wx']}" if o.get("wx") else "")
+    said = wx_words(o)
+    text = f"Live METAR {o['id']} ({o.get('cat') or '?'}): {clouds_txt}" + (f", {said or o['wx']}" if o.get("wx") else "")
     w = core.Wx("clear", o.get("wdir") or 0, o.get("wspd") or 0, max(0, (o.get("wgst") or 0) - (o.get("wspd") or 0)),
                 o.get("temp") if o.get("temp") is not None else 15,
                 round(o.get("altim") or 29.92, 2), min(vis, 30),
