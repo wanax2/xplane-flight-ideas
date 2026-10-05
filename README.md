@@ -6,7 +6,7 @@ It reads your own X-Plane scenery and aircraft, invents a flight worth making �
 
 Python + Tkinter, no build step, no account, works offline.
 
-It opens on a **Start** screen — eight cards for the things you actually come here to do — and the planning panel folds away into a single line the moment you've got what you asked for.
+It opens on a **Start** screen — nine cards grouped under *Fly something*, *Practise* and *Carry on*, over a status strip that says what is actually loaded — and the planning panel folds away into a single line the moment you've got what you asked for.
 
 ![The briefing, the map and the performance numbers](docs/screenshot-light.png)
 
@@ -35,7 +35,7 @@ It opens on a **Start** screen — eight cards for the things you actually come 
 
 **Sets the aeroplane up, not just its position.** Tick one box and the approach tunes NAV1 and NAV2 to the localizer with the course in magnetic degrees, puts tower or CTAF on COM1 and ATIS on COM2, sets the altimeter, winds the altitude bug to the missed approach height, and arms the autopilot — or couples it and lets it fly, or leaves it alone entirely. Airports with no localizer get an RNAV straight-in built into the GPS. It says plainly what it can't do: aircraft with their own avionics ignore X-Plane's datarefs, and the straight-in is not the charted procedure.
 
-**Drops you straight onto final, over and over.** Type an airport, and it picks the runway (the instrument one, or the one with the headwind), reads the localizer frequency out of your scenery, and tells you what you're about to be dropped into: the height you'll appear at, the descent rate and speed to hold, the wind on the runway, the usual minimums, and whether you'll actually see the runway in that weather. Press it again after every go-around.
+**Drops you straight onto final, over and over.** Type an airport — or press **Pick another airport** and let it choose one, within your plan area, near your home base, anywhere in your scenery, or only from fields that have an approach — and it picks the runway (the instrument one, or the one with the headwind), reads the localizer frequency out of your scenery, and tells you what you're about to be dropped into: the height you'll appear at, the descent rate and speed to hold, the wind on the runway, the usual minimums, and whether you'll actually see the runway in that weather. Press it again after every go-around. Every airport it sets up is kept in a list with back and forward arrows, so skipping past a good one costs you nothing.
 
 **Does the numbers.** Density altitude, the best runway for the wind with head and crosswind components, takeoff and landing distances against the runway you actually have, fuel with reserves against tank capacity, and weight against MTOW. Calibrated against a Cessna 172's published figures — within a few percent from sea level to 8,000 ft — but explicitly rules of thumb, not a flight manual.
 

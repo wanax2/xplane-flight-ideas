@@ -166,6 +166,18 @@ class Theme:
         s.configure("TFrame", background=c["card"])
         s.configure("Bg.TFrame", background=c["bg"])
         s.configure("Card.TFrame", background=c["card"], relief="solid", borderwidth=1)
+        # the start-page cards: a second set of styles for the hovered state, because a
+        # ttk label carries its own background and won't inherit the frame's wash
+        s.configure("CardHot.TFrame", background=c["accent_lo"], relief="solid", borderwidth=1)
+        s.configure("CardTitle.TLabel", font=self.head, background=c["card"], foreground=c["text"])
+        s.configure("CardTitleHot.TLabel", font=self.head, background=c["accent_lo"],
+                    foreground=c["text"])
+        s.configure("CardBlurb.TLabel", background=c["card"], foreground=c["muted"])
+        s.configure("CardBlurbHot.TLabel", background=c["accent_lo"], foreground=c["muted"])
+        s.configure("CardNote.TLabel", background=c["card"], foreground=c["ok"], font=self.ui_sm)
+        s.configure("CardNoteHot.TLabel", background=c["accent_lo"], foreground=c["ok"],
+                    font=self.ui_sm)
+        s.configure("Group.TLabel", font=self.ui_bold, background=c["bg"], foreground=c["muted"])
         s.configure("TLabel", background=c["card"], foreground=c["text"])
         s.configure("Bg.TLabel", background=c["bg"], foreground=c["text"])
         s.configure("Head.TLabel", font=self.head, foreground=c["text"], background=c["bg"])

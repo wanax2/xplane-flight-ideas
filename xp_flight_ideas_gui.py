@@ -367,27 +367,83 @@ class Expander(ttk.Frame):
 
 
 class Card(ttk.Frame):
-    """One thing you might want to do, as a box you can click anywhere on."""
+    """One thing you might want to do, as a box you can click anywhere on.
 
-    def __init__(self, master, theme, title, blurb, command, note=""):
-        super().__init__(master, style="Card.TFrame", padding=(12, 10))
-        self.theme, self.command = theme, command
-        self.t = ttk.Label(self, text=title, font=theme.ui_bold, anchor="w")
+    The whole box lights up under the pointer, because a box that does nothing when
+    you hover over it doesn't look like something you can press. The coloured edge
+    says which group it belongs to without needing a word for it.
+    """
+
+    def __init__(self, master, theme, title, blurb, command, note="", accent="accent"):
+        super().__init__(master, style="Card.TFrame")
+        self.theme, self.command, self.accent = theme, command, accent
+        self.stripe = tk.Frame(self, width=theme.px(4),
+                               background=theme.c.get(accent, theme.c["accent"]))
+        self.stripe.pack(side="left", fill="y")
+        self.box = ttk.Frame(self, style="Card.TFrame", padding=(12, 10))
+        self.box.pack(side="left", fill="both", expand=True)
+        self.t = ttk.Label(self.box, text=title, style="CardTitle.TLabel", anchor="w")
         self.t.pack(fill="x")
-        self.d = ttk.Label(self, text=blurb, style="Muted.TLabel", anchor="w", justify="left",
-                           wraplength=theme.px(230))
-        self.d.pack(fill="x", pady=(2, 0))
-        self.n = ttk.Label(self, text=note, style="Ok.TLabel", anchor="w")
+        self.d = ttk.Label(self.box, text=blurb, style="CardBlurb.TLabel", anchor="w",
+                           justify="left", wraplength=theme.px(228))
+        self.d.pack(fill="x", pady=(3, 0))
+        self.n = ttk.Label(self.box, text=note, style="CardNote.TLabel", anchor="w")
         if note:
-            self.n.pack(fill="x", pady=(4, 0))
-        for w in (self, self.t, self.d, self.n):
+            self.n.pack(fill="x", pady=(5, 0))
+        for w in (self, self.box, self.t, self.d, self.n):
             w.bind("<Button-1>", lambda e: self.command())
-            w.bind("<Enter>", lambda e: self.configure(cursor="hand2"))
+            w.bind("<Enter>", self._hot)
+            w.bind("<Leave>", self._cold)
+        theme.on_change(self.repaint)
+
+    # -- hover -------------------------------------------------------------
+    def _inside(self):
+        """True while the pointer is anywhere over this card, children included.
+
+        Tk sends <Leave> as the pointer crosses from the frame onto one of its own
+        labels, so the event alone can't be trusted.
+        """
+        try:
+            w = self.winfo_containing(*self.winfo_pointerxy())
+        except (tk.TclError, KeyError):
+            return False
+        while w is not None:
+            if w is self:
+                return True
+            w = getattr(w, "master", None)
+        return False
+
+    def _paint(self, hot):
+        try:
+            self.configure(style="CardHot.TFrame" if hot else "Card.TFrame")
+            self.box.configure(style="CardHot.TFrame" if hot else "Card.TFrame")
+            self.t.configure(style="CardTitleHot.TLabel" if hot else "CardTitle.TLabel")
+            self.d.configure(style="CardBlurbHot.TLabel" if hot else "CardBlurb.TLabel")
+            self.n.configure(style="CardNoteHot.TLabel" if hot else "CardNote.TLabel")
+        except tk.TclError:
+            pass
+
+    def _hot(self, _e=None):
+        self.configure(cursor="hand2")
+        self._paint(True)
+
+    def _cold(self, _e=None):
+        if self._inside():
+            return
+        self._paint(False)
+
+    def repaint(self):
+        """Follow a light/dark switch."""
+        try:
+            self.stripe.configure(background=self.theme.c.get(self.accent,
+                                                              self.theme.c["accent"]))
+        except tk.TclError:
+            pass
 
     def set_note(self, text):
         self.n.config(text=text)
         if text and not self.n.winfo_ismapped():
-            self.n.pack(fill="x", pady=(4, 0))
+            self.n.pack(fill="x", pady=(5, 0))
         elif not text and self.n.winfo_ismapped():
             self.n.pack_forget()
 
@@ -406,6 +462,8 @@ class App(tk.Tk):
         self.acfs = []
         self.monitor = None
         self.revealed = set()
+        self.appr_hist = []          # every approach picked this session, oldest first
+        self.appr_i = -1             # where the back/forward arrows are pointing
         self._build()
         w, h = self._want_geometry
         w, h = self.theme.px(w), self.theme.px(h)
@@ -479,75 +537,174 @@ class App(tk.Tk):
     # ======================================================================
     # Start: the answer to "what shall we do?"
     # ======================================================================
+    #: the start page, as groups of things you'd actually say out loud
+    START_GROUPS = [
+        ("Fly something", "accent", ("generate", "surprise", "weather", "past")),
+        ("Practise", "ok", ("approach", "checkride", "coach")),
+        ("Carry on", "warn", ("trips", "logbook")),
+    ]
+
     def _build_start(self, f):
         """Not a menu of features - a short list of the things you come here to do."""
         head = ttk.Frame(f, style="Bg.TFrame")
-        head.pack(fill="x", pady=(2, 2))
+        head.pack(fill="x", pady=(2, 6))
         ttk.Label(head, text="What shall we do?", style="Head.TLabel").pack(side="left")
         ttk.Button(head, text="Settings...", style="Quiet.TButton",
                    command=self.settings_window).pack(side="right")
 
+        self._build_status_strip(f)
+
         self.v_resume = tk.StringVar(value="")
         res = ttk.Frame(f, style="Bg.TFrame")
-        res.pack(fill="x", pady=(0, 8))
+        res.pack(fill="x", pady=(8, 4))
         ttk.Label(res, textvariable=self.v_resume, style="MutedBg.TLabel").pack(side="left")
         self.b_resume = ttk.Button(res, text="Carry on from there", style="Quiet.TButton",
                                    command=self.resume_last)
 
-        grid = ttk.Frame(f, style="Bg.TFrame")
-        grid.pack(fill="both", expand=True)
         self.start_cards = {}
-        cards = [
-            ("generate", "Generate flight ideas",
-             "Say roughly what you fancy and it invents something worth flying, out of your own "
-             "scenery.", self.start_generate),
-            ("surprise", "Surprise me",
-             "Somewhere scenic, a wonder of the world, a dart at the planet, or today's challenge.",
-             self.surprise_menu),
-            ("weather", "Fly real weather",
-             "Every METAR on earth right now, ranked by how nasty it is. Fly into it, or out of it.",
-             lambda: self.goto(self.tab_wx)),
-            ("past", "Fly a day from the past",
-             "Any date, anywhere, back to 1940 - the weather that was really there, hour by hour.",
-             lambda: self.goto(self.tab_wxpast)),
-            ("approach", "Practise an approach",
-             "Straight onto final at any airport, at any distance, in any weather, over and over.",
-             lambda: self.approach_window()),
-            ("checkride", "Fly a checkride",
-             "Eight manoeuvres graded live against real tolerances, one at a time or the whole ride.",
-             lambda: self.goto(self.tab_ck)),
-            ("coach", "What should I practise?",
-             "Your logbook read back to you: what you are worse at, and the flight that fixes it.",
-             lambda: (self.goto(self.tab_coach), self.fill_coach())),
-            ("trips", "Pick up a trip",
-             "Multi-leg journeys you fly over several sessions, a leg at a time.",
-             lambda: self.goto(self.tab_trips)),
-        ]
-        for i, (key, title, blurb, cmd) in enumerate(cards):
-            card = Card(grid, self.theme, title, blurb, cmd)
-            card.grid(row=i // 4, column=i % 4, sticky="new", padx=4, pady=4)
-            self.start_cards[key] = card
-        for col in range(4):
-            grid.columnconfigure(col, weight=1, uniform="cards")
-        grid.rowconfigure(2, weight=1)            # the slack goes below the cards, not inside them
+        spec = {
+            "generate": ("Generate flight ideas",
+                         "Say roughly what you fancy and it invents something worth flying, out of "
+                         "your own scenery.", self.start_generate),
+            "surprise": ("Surprise me",
+                         "Somewhere scenic, a wonder of the world, a dart at the planet, or today's "
+                         "challenge.", self.surprise_menu),
+            "weather": ("Fly real weather",
+                        "Every METAR on earth right now, ranked by how nasty it is. Fly into it, or "
+                        "out of it.", lambda: self.goto(self.tab_wx)),
+            "past": ("Fly a day from the past",
+                     "Any date, anywhere, back to 1940 - the weather that was really there, hour by "
+                     "hour.", lambda: self.goto(self.tab_wxpast)),
+            "approach": ("Practise an approach",
+                         "Straight onto final at any airport, at any distance, in any weather, over "
+                         "and over.", lambda: self.approach_window()),
+            "checkride": ("Fly a checkride",
+                          "Eight manoeuvres graded live against real tolerances, one at a time or "
+                          "the whole ride.", lambda: self.goto(self.tab_ck)),
+            "coach": ("What should I practise?",
+                      "Your logbook read back to you: what you are worse at, and the flight that "
+                      "fixes it.", lambda: (self.goto(self.tab_coach), self.fill_coach())),
+            "trips": ("Pick up a trip",
+                      "Multi-leg journeys you fly over several sessions, a leg at a time.",
+                      lambda: self.goto(self.tab_trips)),
+            "logbook": ("Your logbook",
+                        "Every flight you've scored, with the numbers behind each one.",
+                        lambda: self.goto(self.tab_log)),
+        }
+        for title, accent, keys in self.START_GROUPS:
+            ttk.Label(f, text=title.upper(), style="Group.TLabel").pack(anchor="w", pady=(10, 4))
+            grid = ttk.Frame(f, style="Bg.TFrame")
+            grid.pack(fill="x")
+            for i, key in enumerate(keys):
+                t, blurb, cmd = spec[key]
+                card = Card(grid, self.theme, t, blurb, cmd, accent=accent)
+                card.grid(row=0, column=i, sticky="nsew", padx=(0, 8), pady=2)
+                self.start_cards[key] = card
+            for col in range(4):
+                grid.columnconfigure(col, weight=1, uniform="cards")
 
         tip = ttk.Label(f, style="MutedBg.TLabel", justify="left",
                         text="Everything here is also in the tabs above - this is just the short way in.")
-        tip.pack(anchor="w", pady=(8, 0))
+        tip.pack(anchor="w", pady=(14, 0))
         self.fill_start()
+
+    def _build_status_strip(self, f):
+        """What is actually loaded, in one line, so you don't have to go and look."""
+        strip = ttk.Frame(f, style="Card.TFrame", padding=(12, 8))
+        strip.pack(fill="x")
+        self.stat = {}
+        for i, (key, label) in enumerate((("scenery", "Scenery"), ("acf", "Aeroplane"),
+                                          ("wx", "Weather"), ("log", "Logbook"))):
+            # plain TFrame, not Card.TFrame: that one has a border, and four boxed
+            # cells inside a boxed strip is three borders too many
+            cell = ttk.Frame(strip)
+            cell.grid(row=0, column=i, sticky="w", padx=(0, 24))
+            dot = ttk.Label(cell, text="●", style="Muted.TLabel")
+            dot.pack(side="left", padx=(0, 6))
+            box = ttk.Frame(cell)
+            box.pack(side="left")
+            ttk.Label(box, text=label.upper(), style="Muted.TLabel",
+                      font=self.theme.ui_sm).pack(anchor="w")
+            val = ttk.Label(box, text="—", style="CardTitle.TLabel")
+            val.pack(anchor="w")
+            self.stat[key] = (dot, val)
+        strip.columnconfigure(3, weight=1)       # slack on the end, so nothing is clipped
+
+    def _set_stat(self, key, text, state="muted"):
+        try:
+            dot, val = self.stat[key]
+        except (AttributeError, KeyError):
+            return
+        try:
+            dot.configure(style={"ok": "Ok.TLabel", "warn": "Warn.TLabel",
+                                 "bad": "Bad.TLabel"}.get(state, "Muted.TLabel"))
+            val.configure(text=text)
+        except tk.TclError:
+            pass
+
+    def fill_status_strip(self):
+        """Four honest answers: what's loaded, what you're flying, how old the weather is."""
+        if not hasattr(self, "stat"):
+            return
+        # scenery
+        if self.airports and self.world_only():
+            self._set_stat("scenery", f"{len(self.airports):,} airports worldwide", "warn")
+        elif self.airports:
+            bits = f"{len(self.airports):,} airports"
+            try:
+                packs = self.scenery().airport_packs()
+                if packs:
+                    bits += f"  ·  {len(packs):,} add-on packs"
+            except Exception:
+                pass
+            self._set_stat("scenery", bits, "ok")
+        elif not self.v_root.get().strip():
+            self._set_stat("scenery", "not set up yet", "bad")
+        else:
+            self._set_stat("scenery", "loading...", "warn")
+        # the aeroplane, and where you left it
+        try:
+            name = self.ac().get("name", "") or "—"
+            acf = self.selected_acf()
+            where = self.fleet().where(acf) if acf else None
+            self._set_stat("acf", f"{name}  ·  at {where}" if where else name, "ok")
+        except Exception:
+            self._set_stat("acf", "—")
+        # weather
+        try:
+            age = self.metar_src.age_min()
+            n = len(self.metar_src.obs or [])
+            if not n:
+                self._set_stat("wx", "not fetched yet", "muted")
+            else:
+                self._set_stat("wx", f"{n:,} reports  ·  {age:.0f} min old",
+                               "ok" if (age or 0) <= 60 else "warn")
+        except Exception:
+            self._set_stat("wx", "not fetched yet")
+        # logbook
+        try:
+            n = len(self.logbook.entries)
+            if not n:
+                self._set_stat("log", "nothing flown yet", "muted")
+            else:
+                when = (time.time() - self.logbook.entries[0].get("time", 0)) / 86400.0
+                ago = "today" if when < 1 else f"{when:.0f} days ago"
+                self._set_stat("log", f"{n:,} flights  ·  last {ago}", "ok")
+        except Exception:
+            self._set_stat("log", "—")
 
     def fill_start(self):
         """Keep the start cards honest about what is actually there."""
         if not hasattr(self, "start_cards"):
             return
+        self.fill_status_strip()
         try:
             n = len(self.logbook.entries)
         except Exception:
             n = 0
         self.start_cards["coach"].set_note(
             "" if n >= 3 else "needs a few scored flights first")
-        self.start_cards["checkride"].set_note(
-            "" if self.ideas or self.airports else "")
+        self.start_cards["logbook"].set_note(f"{n:,} flights" if n else "empty")
         try:
             trips = len(self.trips.trips)
         except Exception:
@@ -557,6 +714,8 @@ class App(tk.Tk):
             self.start_cards["generate"].set_note(f"{len(self.ideas)} ready to look at")
         else:
             self.start_cards["generate"].set_note("")
+        picks = len(getattr(self, "appr_hist", ()))
+        self.start_cards["approach"].set_note(f"{picks} set up this session" if picks else "")
         # the resume line
         line = ""
         try:
@@ -982,6 +1141,17 @@ class App(tk.Tk):
         self._build_pictures(pf)
         ttk.Button(bb, text="Set this flight up  \u203a\u203a", style="Big.TButton",
                    command=lambda: self.goto(self.tab_fly)).pack(side="right", padx=(8, 0))
+        # Step through the ideas without hunting for them in the list - and without
+        # losing the one you scrolled past.
+        self.b_ideaback = ttk.Button(bb, text="\u25c2", width=3, style="Quiet.TButton",
+                                     command=lambda: self.idea_step(-1))
+        self.b_ideaback.pack(side="left", padx=(0, 2))
+        self.b_ideafwd = ttk.Button(bb, text="\u25b8", width=3, style="Quiet.TButton",
+                                    command=lambda: self.idea_step(1))
+        self.b_ideafwd.pack(side="left", padx=(0, 3))
+        self.v_ideanum = tk.StringVar(value="")
+        ttk.Label(bb, textvariable=self.v_ideanum, style="Muted.TLabel").pack(side="left",
+                                                                              padx=(0, 10))
         ttk.Button(bb, text="Copy", style="Quiet.TButton",
                    command=self.copy_brief).pack(side="left", padx=(0, 3))
         ttk.Button(bb, text="Save \u25be", style="Quiet.TButton",
@@ -3515,7 +3685,10 @@ class App(tk.Tk):
             or (self._home_ref() or {}).get("id", "")
         win = tk.Toplevel(self)
         win.title("Set up an approach")
-        win.geometry(f"{self.theme.px(780)}x{self.theme.px(780)}")
+        # taller than it was: the picks list and the airport arrows need the room,
+        # and the "Put me on final" button must not fall off the bottom
+        _h = min(self.theme.px(930), self.winfo_screenheight() - 80)
+        win.geometry(f"{self.theme.px(780)}x{_h}")
         win.transient(self)
         self.theme.track(win, "window")
         head = ttk.Frame(win, style="Bg.TFrame", padding=(12, 10, 12, 4))
@@ -3538,6 +3711,9 @@ class App(tk.Tk):
         self.v_aprnav = tk.StringVar(value=self.cfg.get("appr_rnav", "Straight-in fixes in the GPS"))
         self.v_apset = tk.BooleanVar(value=self.cfg.get("appr_set", True))
         self.v_apfail = tk.StringVar(value=self.cfg.get("appr_fail", "Nothing - just fly it"))
+        _s = self.cfg.get("appr_scope", "plan")
+        self.v_apscope = tk.StringVar(value=next((t for k, t in self.APPR_SCOPE if k == _s),
+                                                 self.APPR_SCOPE[0][1]))
 
         g = ttk.LabelFrame(body, text="Where", padding=(10, 8))
         g.pack(fill="x")
@@ -3554,6 +3730,23 @@ class App(tk.Tk):
         self.l_apwhy = ttk.Label(g, text="", style="Muted.TLabel", wraplength=self.theme.px(620),
                                  justify="left")
         self.l_apwhy.grid(row=2, column=0, columnspan=5, sticky="w", pady=(6, 0))
+
+        # Opening this window used to offer the same airport every time, because it
+        # only ever looked at the current idea. Now you can ask it for another one.
+        nav = ttk.Frame(g)
+        nav.grid(row=3, column=0, columnspan=5, sticky="w", pady=(10, 0))
+        self.b_apback = ttk.Button(nav, text="◂", width=3, style="Quiet.TButton",
+                                   command=lambda: self.appr_step(-1))
+        self.b_apback.pack(side="left")
+        self.b_apfwd = ttk.Button(nav, text="▸", width=3, style="Quiet.TButton",
+                                  command=lambda: self.appr_step(1))
+        self.b_apfwd.pack(side="left", padx=(2, 10))
+        ttk.Button(nav, text="Pick another airport", command=self.appr_another).pack(side="left")
+        ttk.Label(nav, text="  from").pack(side="left")
+        ttk.Combobox(nav, textvariable=self.v_apscope, state="readonly", width=30,
+                     values=[t for _, t in self.APPR_SCOPE]).pack(side="left", padx=4)
+        self.l_aphist = ttk.Label(nav, text="", style="Muted.TLabel")
+        self.l_aphist.pack(side="left", padx=(10, 0))
         g.columnconfigure(3, weight=1)
 
         g = ttk.LabelFrame(body, text="How far out", padding=(10, 8))
@@ -3590,7 +3783,22 @@ class App(tk.Tk):
             row=3, column=2, columnspan=2, sticky="w", padx=(8, 0), pady=(2, 0))
         g.columnconfigure(1, weight=1)
 
-        self.ap_txt = ScrolledText(win, wrap="word", height=9, font=MONO)
+        g = ttk.LabelFrame(body, text="Picked this session", padding=(10, 6))
+        g.pack(fill="x", pady=(0, 8))
+        tv = ttk.Treeview(g, columns=("apt", "rwy", "nm", "wx"), show="headings", height=4,
+                          selectmode="browse")
+        for col, head, w in (("apt", "Airport", 250), ("rwy", "Runway", 90),
+                             ("nm", "Out", 60), ("wx", "Weather", 230)):
+            tv.heading(col, text=head)
+            tv.column(col, width=self.theme.px(w), anchor="w")
+        self.theme.fit_columns(tv)
+        tv.pack(fill="x")
+        tv.bind("<<TreeviewSelect>>", lambda e: self.appr_from_list())
+        self.tv_aphist = tv
+        ttk.Label(g, text="Click a line to set it up again - nothing here is thrown away.",
+                  style="Muted.TLabel").pack(anchor="w", pady=(4, 0))
+
+        self.ap_txt = ScrolledText(win, wrap="word", height=7, font=MONO)
         self.theme.track(self.ap_txt, "text")
         self.ap_txt.pack(fill="both", expand=True, padx=12)
         self.ap_txt.config(state="disabled")
@@ -3645,6 +3853,176 @@ class App(tk.Tk):
             v.trace_add("write", lambda *a: self.debounce("appr", refresh, 200))
         e.bind("<Return>", lambda ev: refresh())
         refresh()
+        if start:
+            self.appr_record(start)
+        self.appr_sync()
+
+    # ---------------------------------------------------------------- picking
+    #: where "Pick another airport" is allowed to look
+    APPR_SCOPE = [
+        ("plan", "within the plan area"),
+        ("home", "near my home base"),
+        ("any", "anywhere in my scenery"),
+        ("ils", "only fields with an approach"),
+    ]
+    HOME_NM = 250                     # what "near my home base" means
+
+    def appr_scope_key(self):
+        txt = self.v_apscope.get()
+        return next((k for k, t in self.APPR_SCOPE if t == txt), "plan")
+
+    def appr_pool(self, scope):
+        """The airports 'Pick another' may choose from, under the scope asked for.
+
+        Each branch falls back to the wider pool rather than returning nothing, because
+        an empty list here would look like a broken button.
+        """
+        aps = [a for a in (self.airports or [])
+               if a.get("rwys") and any(r.get("s") != "helipad" and (r.get("len") or 0) >= 1500
+                                        for r in a["rwys"])]
+        if not aps:
+            return []
+        if scope == "ils":
+            return [a for a in aps if a.get("ils")] or aps
+        if scope == "any":
+            return aps
+        if scope == "home":
+            home = self._home_ref()
+            if not home:
+                return aps
+            return [a for a in aps if core.dist_nm(home["lat"], home["lon"],
+                                                   a["lat"], a["lon"]) <= self.HOME_NM] or aps
+        area = self.area_key()
+        if area == "continent":
+            return [a for a in aps if core.in_area(a, self.v_continent.get())] or aps
+        if area in ("country", "state"):
+            iso = self.country_iso()
+            out = [a for a in aps if (a.get("iso") or ("US" if core.is_us(a) else "")) == iso]
+            if area == "state" and self.v_state.get().strip():
+                st = self.v_state.get().strip()
+                out = [a for a in out if (a.get("state") or "") == st] or out
+            return out or aps
+        if area == "near":
+            ident = self.v_near.get().strip().upper()
+            home = next((x for x in aps if x["id"].upper() == ident), None) or self._home_ref()
+            if home:
+                r = self.num(self.v_radius, 150)
+                return [a for a in aps if core.dist_nm(home["lat"], home["lon"],
+                                                       a["lat"], a["lon"]) <= r] or aps
+        return aps
+
+    def appr_another(self):
+        """A different airport, and never the same one twice in a row."""
+        scope = self.appr_scope_key()
+        core.save_config(appr_scope=scope)
+        pool = self.appr_pool(scope)
+        if not pool:
+            messagebox.showinfo("Approach", "No airport in your scenery fits that - try a wider "
+                                            "scope, or load more scenery.")
+            return
+        here = self.v_apid.get().strip().upper()
+        recent = {h["id"].upper() for h in self.appr_hist[-12:]}
+        choices = ([a for a in pool if a["id"].upper() != here and a["id"].upper() not in recent]
+                   or [a for a in pool if a["id"].upper() != here] or pool)
+        a = random.choice(choices)
+        self.v_apid.set(a["id"])
+        self.appr_record(a["id"])
+
+    def appr_record(self, ident):
+        """Remember a pick. Nothing is ever dropped - you asked to be able to go back."""
+        a = next((x for x in (self.airports or []) if x["id"].upper() == str(ident).strip().upper()),
+                 None)
+        if not a:
+            return
+        try:
+            opt, _why = xp_approach.pick_runway(a, self.approach_wx(self.ap_wx_key()), core,
+                                                self.v_apils.get())
+        except Exception:
+            opt = None
+        row = {"id": a["id"], "name": a.get("name", ""), "rwy": (opt or {}).get("end", "?"),
+               "ils": bool((opt or {}).get("ils")), "nm": self.num(self.v_apnm, 6),
+               "wx": self.v_apwx.get()}
+        same = next((i for i, h in enumerate(self.appr_hist)
+                     if (h["id"], h["rwy"], h["nm"], h["wx"]) ==
+                     (row["id"], row["rwy"], row["nm"], row["wx"])), None)
+        if same is not None:
+            self.appr_i = same                 # already on the list: just point at it
+        else:
+            self.appr_hist.append(row)
+            self.appr_i = len(self.appr_hist) - 1
+        self.appr_sync()
+
+    def appr_step(self, d):
+        """The back and forward arrows."""
+        if not self.appr_hist:
+            return
+        i = max(0, min(len(self.appr_hist) - 1, self.appr_i + d))
+        if i == self.appr_i:
+            return
+        self.appr_i = i
+        self.appr_apply(self.appr_hist[i])
+
+    def appr_from_list(self):
+        """Clicking a line puts that approach back in the boxes."""
+        if getattr(self, "_appr_mute", False):
+            return
+        try:
+            sel = self.tv_aphist.selection()
+        except tk.TclError:
+            return
+        if not sel:
+            return
+        try:
+            i = int(sel[0])
+        except ValueError:
+            return
+        if 0 <= i < len(self.appr_hist) and i != self.appr_i:
+            self.appr_i = i
+            self.appr_apply(self.appr_hist[i])
+
+    def appr_apply(self, row):
+        """Restore one remembered pick without recording it all over again."""
+        self._appr_mute = True
+        try:
+            self.v_apid.set(row["id"])
+            self.v_apnm.set(str(row["nm"]))
+            if row.get("wx"):
+                self.v_apwx.set(row["wx"])
+        finally:
+            self._appr_mute = False
+        self.appr_sync()
+        if getattr(self, "_ap_refresh", None):
+            self.debounce("appr", self._ap_refresh, 60)
+
+    def appr_sync(self):
+        """Repaint the list, the counter and the two arrows."""
+        try:
+            self.fill_start()
+        except Exception:
+            pass
+        tv = getattr(self, "tv_aphist", None)
+        if tv is None:
+            return
+        try:
+            if not tv.winfo_exists():
+                return
+            self._appr_mute = True
+            tv.delete(*tv.get_children())
+            for i, h in enumerate(self.appr_hist):
+                name = f"{h['id']}  {h['name']}".strip()
+                rwy = h["rwy"] + ("  ILS" if h.get("ils") else "")
+                tv.insert("", "end", iid=str(i),
+                          values=(name, rwy, f"{h['nm']} nm", h.get("wx", "")))
+            if 0 <= self.appr_i < len(self.appr_hist):
+                tv.selection_set(str(self.appr_i))
+                tv.see(str(self.appr_i))
+            self._appr_mute = False
+            n = len(self.appr_hist)
+            self.l_aphist.config(text=f"{self.appr_i + 1} of {n}" if n else "")
+            self.b_apback.state(["!disabled"] if self.appr_i > 0 else ["disabled"])
+            self.b_apfwd.state(["!disabled"] if self.appr_i < n - 1 else ["disabled"])
+        except tk.TclError:
+            self._appr_mute = False
 
     def set_text(self, widget, text):
         """Replace the contents of a read-only text box."""
@@ -3730,6 +4108,7 @@ class App(tk.Tk):
         if not acf:
             messagebox.showinfo("Approach", "Choose an aircraft on the left first.")
             return
+        self.appr_record(a["id"])         # so you can walk back to it after a go-around
         nm = max(1.0, self.num(self.v_apnm, 6))
         key = self.ap_wx_key()
         if key == "leave":
@@ -4874,6 +5253,34 @@ class App(tk.Tk):
         self.show_brief()
         self.fill_launch()
         self.show_pictures()
+        self.sync_idea_nav()
+
+    def idea_step(self, d):
+        """Walk back and forth through the ideas already generated."""
+        if not self.ideas:
+            return
+        sel = self.lb.curselection()
+        i = (sel[0] if sel else 0) + d
+        if not 0 <= i < len(self.ideas):
+            return
+        self.lb.selection_clear(0, "end")
+        self.lb.selection_set(i)
+        self.lb.see(i)
+        self.on_select()
+
+    def sync_idea_nav(self):
+        """The counter between the arrows, and whether either arrow can be pressed."""
+        if not hasattr(self, "v_ideanum"):
+            return
+        try:
+            sel = self.lb.curselection()
+            i = sel[0] if sel else -1
+            n = len(self.ideas)
+            self.v_ideanum.set(f"{i + 1} of {n}" if n and i >= 0 else "")
+            self.b_ideaback.state(["!disabled"] if i > 0 else ["disabled"])
+            self.b_ideafwd.state(["!disabled"] if 0 <= i < n - 1 else ["disabled"])
+        except tk.TclError:
+            pass
 
     def brief_tags(self):
         """(Re)define the text styles used by the briefing."""

@@ -180,7 +180,19 @@ def share_code(idea, ac_name=""):
                 "t": idea.wx.temp, "a": idea.wx.altimeter, "v": idea.wx.vis,
                 "L": idea.wx.layers if idea.wx.custom else None, "x": idea.wx.sky_text if idea.wx.custom else None,
                 "p": idea.wx.precip if idea.wx.custom else None}}
-    raw = zlib.compress(json.dumps(d, separators=(",", ":")).encode(), 9)
+    def _plain(o):
+        """Ideas built from the wonders and scenic lists carry the odd set in them.
+
+        A share code that raises is worse than one that spells a set as a sorted
+        list, so anything json won't take becomes something it will.
+        """
+        if isinstance(o, (set, frozenset)):
+            return sorted(o, key=str)
+        if isinstance(o, tuple):
+            return list(o)
+        return str(o)
+
+    raw = zlib.compress(json.dumps(d, separators=(",", ":"), default=_plain).encode(), 9)
     return "XPFI1:" + base64.urlsafe_b64encode(raw).decode()
 
 

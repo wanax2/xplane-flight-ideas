@@ -1,4 +1,4 @@
-X-PLANE FLIGHT IDEAS  v6.12
+X-PLANE FLIGHT IDEAS  v6.13
 ========================
 
 Files
@@ -830,6 +830,30 @@ WHERE THE ONLINE DATA COMES FROM
    All of them are optional. The app works with no internet at all - it just
    uses your own X-Plane scenery instead.
 
+
+WHAT'S NEW IN 6.13
+   - Practise an approach stopped offering the same airport every time. It used
+     to take whatever the current idea's destination was and leave it at that, so
+     the only way to move was to generate a new flight. There is now a "Pick
+     another airport" button with four scopes to pick from: within the plan area,
+     near your home base, anywhere in your scenery, or only fields that have an
+     approach. It won't hand you the same field twice in a row, and it steers
+     clear of the last dozen.
+   - Back and forward arrows on the approach window, and a "Picked this session"
+     list under it. Every airport you set up is kept - nothing is thrown away, so
+     if you skip past one you liked you can walk back to it or click the line.
+     The arrows grey out at the ends.
+   - The same arrows on the Briefing tab, with an "n of m" counter, for stepping
+     through the ideas you have already generated.
+   - The Start page is grouped: FLY SOMETHING, PRACTISE, CARRY ON, each with its
+     own colour down the edge of its cards. A ninth card opens your logbook.
+   - A status strip across the top of the Start page: how many airports and
+     add-on packs loaded, which aeroplane and where you left it, how many
+     weather reports and how old they are, how many flights are in the logbook.
+     Green, amber or grey dot each, so a glance tells you what is actually ready.
+   - Cards light up under the pointer instead of only changing the cursor.
+   - Share codes no longer fall over on ideas built from the wonders and scenic
+     lists, which could carry a set that wouldn't encode.
 
 WHAT'S NEW IN 6.12
    - The METAR present-weather codes are read out loud everywhere they appear:
