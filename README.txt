@@ -1,4 +1,4 @@
-X-PLANE FLIGHT IDEAS  v6.13.1
+X-PLANE FLIGHT IDEAS  v6.14
 ========================
 
 Files
@@ -22,6 +22,10 @@ Files
   xp_scenery.py             which add-on scenery you have installed
   xp_perf.py                density altitude, runway lengths, fuel, weight
   xp_approach.py            approach geometry, runway choice, minimums
+  xp_departure.py           climb gradient, density altitude, what makes a field
+                            hard to leave
+  xp_procs.py               real SIDs, STARs and approaches from your CIFP data
+  xp_charts.py              where to find the free plates for an airport
   xp_hazard.py              icing, turbulence, shear, and 13 inclement-weather scenarios
   xp_avionics.py            tunes the radios, sets the bugs, arms the autopilot
   xp_history.py             the weather on a past date, from two archives
@@ -830,6 +834,35 @@ WHERE THE ONLINE DATA COMES FROM
    All of them are optional. The app works with no internet at all - it just
    uses your own X-Plane scenery instead.
 
+
+WHAT'S NEW IN 6.14
+   Departures. The approach side of this app asks whether you will see the
+   runway; this asks the other question, which is whether you will out-climb
+   what is in front of you.
+   - "Practise a departure" on the Start page, and a window to match the
+     approach one: it puts you on the runway, with the same picker, the same
+     back/forward history, the same chart links.
+   - The numbers that actually decide it: density altitude, how much climb is
+     left at that altitude, and what that gives you in feet per nautical mile -
+     against the 200 ft/nm a published departure assumes. Leadville on a warm
+     afternoon tells you plainly that a 172 will not climb out of there today.
+     Takeoff roll and distance over 50 ft against the runway you have, the wind
+     on it, and the highest ground known within a few miles.
+   - "Find me one" with a "somewhere hard to get out of" scope: it scores a
+     sample of your scenery and gives you the worst of it. On a Colorado
+     install that means Leadville, Telluride, Aspen and a one-way strip in a
+     canyon, not another 10,000 ft of concrete.
+   - Real SIDs, read out of your own CIFP data - Navigraph's cycle if you have
+     it, X-Plane's own if you don't. It lists what each runway actually
+     publishes, follows the runway and enroute transitions, and loads the
+     waypoints into the GPS. Legs that are headings, arcs or holds rather than
+     waypoints are left out and said so. It is not the plate. Fly the plate.
+   - A "somewhere interesting to take off from" tick in the plan panel. With it
+     on, generated flights lean towards fields that are high, short, soft or
+     hemmed in - mean field elevation went from 2,900 ft to 4,700 ft across 400
+     picks in testing. It is a lean, not a straitjacket.
+   - A GETTING OUT section in the briefing when the departure is worth a line,
+     and silence when it isn't.
 
 WHAT'S NEW IN 6.13.1
    - A "Charts" button in the approach window, and better chart links on the

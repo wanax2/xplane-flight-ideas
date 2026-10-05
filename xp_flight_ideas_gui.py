@@ -56,6 +56,8 @@ import xp_history                      # noqa: E402
 import xp_world                        # noqa: E402
 import xp_packs                        # noqa: E402
 import xp_charts                       # noqa: E402
+import xp_procs                        # noqa: E402
+import xp_departure                    # noqa: E402
 import xp_fleet                        # noqa: E402
 import xp_acf                           # noqa: E402
 import xp_score                         # noqa: E402
@@ -465,6 +467,8 @@ class App(tk.Tk):
         self.revealed = set()
         self.appr_hist = []          # every approach picked this session, oldest first
         self.appr_i = -1             # where the back/forward arrows are pointing
+        self.dep_hist = []           # and the same for departures
+        self.dep_i = -1
         self._build()
         w, h = self._want_geometry
         w, h = self.theme.px(w), self.theme.px(h)
@@ -541,7 +545,7 @@ class App(tk.Tk):
     #: the start page, as groups of things you'd actually say out loud
     START_GROUPS = [
         ("Fly something", "accent", ("generate", "surprise", "weather", "past")),
-        ("Practise", "ok", ("approach", "checkride", "coach")),
+        ("Practise", "ok", ("approach", "departure", "checkride", "coach")),
         ("Carry on", "warn", ("trips", "logbook")),
     ]
 
@@ -579,6 +583,10 @@ class App(tk.Tk):
             "approach": ("Practise an approach",
                          "Straight onto final at any airport, at any distance, in any weather, over "
                          "and over.", lambda: self.approach_window()),
+            "departure": ("Practise a departure",
+                          "On the runway somewhere hard to leave - short, high, hot, hemmed in - "
+                          "with the climb numbers that decide it.",
+                          lambda: self.departure_window()),
             "checkride": ("Fly a checkride",
                           "Eight manoeuvres graded live against real tolerances, one at a time or "
                           "the whole ride.", lambda: self.goto(self.tab_ck)),
@@ -717,6 +725,8 @@ class App(tk.Tk):
             self.start_cards["generate"].set_note("")
         picks = len(getattr(self, "appr_hist", ()))
         self.start_cards["approach"].set_note(f"{picks} set up this session" if picks else "")
+        picks = len(getattr(self, "dep_hist", ()))
+        self.start_cards["departure"].set_note(f"{picks} set up this session" if picks else "")
         # the resume line
         line = ""
         try:
@@ -983,6 +993,10 @@ class App(tk.Tk):
         ttk.Spinbox(g, textvariable=self.v_maxleg, from_=0, to=1000, increment=10, width=5).grid(row=6, column=1, sticky="w")
         ttk.Checkbutton(g, text="private strips", variable=self.v_private).grid(row=6, column=2, columnspan=3,
                                                                                 sticky="w", padx=(6, 0))
+        self.v_harddep = tk.BooleanVar(value=bool(c.get("hard_dep", False)))
+        ttk.Checkbutton(g, text="somewhere interesting to take off from",
+                        variable=self.v_harddep).grid(row=7, column=0, columnspan=5,
+                                                      sticky="w", pady=(2, 0))
         self.on_area()
 
         # --- Missions ---
@@ -1771,7 +1785,8 @@ class App(tk.Tk):
             country=self.v_country.get(), state=self.v_state.get(), **{"from": self.v_from.get()},
             area=self.area_key(), continent=self.v_continent.get(),
             near=self.v_near.get(), radius=self.num(self.v_radius, 150), max_leg=self.num(self.v_maxleg, 0),
-            private=self.v_private.get(), missions=[k for k, v in self.v_miss.items() if v.get()],
+            private=self.v_private.get(), hard_dep=bool(self.v_harddep.get()),
+            missions=[k for k, v in self.v_miss.items() if v.get()],
             count=int(self.num(self.v_count, 8)), twist=int(self.v_twist.get()), custom=self.v_custom.get(),
             host=self.v_host.get(), port=int(self.num(self.v_port, 8086)), start=self.v_start.get(),
             engines=self.v_engines.get(), wxmode=self.v_wxmode.get(), loadroute=self.v_loadroute.get(),
@@ -4027,6 +4042,500 @@ class App(tk.Tk):
         except tk.TclError:
             self._appr_mute = False
 
+    # ======================================================================
+    # Departures: the other half of the problem
+    # ======================================================================
+    #: how long a departure counts as "interesting" before the picker prefers it
+    DEP_INTEREST = 3.0
+
+    def departure_window(self, ident=None):
+        """Put the aeroplane on the runway somewhere that is hard to get out of."""
+        if not self.airports:
+            messagebox.showinfo("Departure", self.xplane_state())
+            return
+        start = ident or (self.idea.stops[0]["id"] if self.idea else None) \
+            or (self._home_ref() or {}).get("id", "")
+        win = tk.Toplevel(self)
+        win.title("Set up a departure")
+        _h = min(self.theme.px(930), self.winfo_screenheight() - 80)
+        win.geometry(f"{self.theme.px(820)}x{_h}")
+        win.transient(self)
+        self.theme.track(win, "window")
+        head = ttk.Frame(win, style="Bg.TFrame", padding=(12, 10, 12, 4))
+        head.pack(fill="x")
+        ttk.Label(head, text="Set up a departure", style="Head.TLabel").pack(side="left")
+        ttk.Label(head, text="   on the runway, with the numbers that decide it",
+                  style="MutedBg.TLabel").pack(side="left")
+        body = ttk.Frame(win, padding=(12, 8))
+        body.pack(fill="both", expand=True)
+
+        self.v_dpid = tk.StringVar(value=start or "")
+        self.v_dprwy = tk.StringVar()
+        _k = self.cfg.get("dep_wx", "clear")
+        self.v_dpwx = tk.StringVar(value=next((t for k, t in self.APPR_WX if k == _k),
+                                              self.APPR_WX[1][1]))
+        _s = self.cfg.get("dep_scope", "hard")
+        self.v_dpscope = tk.StringVar(value=next((t for k, t in self.DEP_SCOPE if k == _s),
+                                                 self.DEP_SCOPE[0][1]))
+        self.v_dpsid = tk.StringVar(value="")
+        self.v_dptrans = tk.StringVar(value="")
+        self.v_dpload = tk.BooleanVar(value=self.cfg.get("dep_load", True))
+
+        g = ttk.LabelFrame(body, text="Where", padding=(10, 8))
+        g.pack(fill="x")
+        ttk.Label(g, text="Airport:").grid(row=0, column=0, sticky="w")
+        e = ttk.Entry(g, textvariable=self.v_dpid, width=9)
+        e.grid(row=0, column=1, sticky="w", padx=(4, 8))
+        self.l_dpname = ttk.Label(g, text="", style="Muted.TLabel")
+        self.l_dpname.grid(row=0, column=2, columnspan=3, sticky="w")
+        ttk.Label(g, text="Runway:").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        self.cb_dprwy = ttk.Combobox(g, textvariable=self.v_dprwy, state="readonly", width=46)
+        self.cb_dprwy.grid(row=1, column=1, columnspan=4, sticky="w", padx=(4, 8), pady=(6, 0))
+        self.l_dpwhy = ttk.Label(g, text="", style="Muted.TLabel",
+                                 wraplength=self.theme.px(660), justify="left")
+        self.l_dpwhy.grid(row=2, column=0, columnspan=5, sticky="w", pady=(6, 0))
+        nav = ttk.Frame(g)
+        nav.grid(row=3, column=0, columnspan=5, sticky="w", pady=(10, 0))
+        self.b_dpback = ttk.Button(nav, text="◂", width=3, style="Quiet.TButton",
+                                   command=lambda: self.dep_step(-1))
+        self.b_dpback.pack(side="left")
+        self.b_dpfwd = ttk.Button(nav, text="▸", width=3, style="Quiet.TButton",
+                                  command=lambda: self.dep_step(1))
+        self.b_dpfwd.pack(side="left", padx=(2, 10))
+        ttk.Button(nav, text="Find me one", command=self.dep_another).pack(side="left")
+        ttk.Button(nav, text="Charts ▾", style="Quiet.TButton",
+                   command=self.dep_charts).pack(side="left", padx=(6, 0))
+        ttk.Label(nav, text="  ").pack(side="left")
+        ttk.Combobox(nav, textvariable=self.v_dpscope, state="readonly", width=32,
+                     values=[t for _, t in self.DEP_SCOPE]).pack(side="left", padx=4)
+        self.l_dphist = ttk.Label(nav, text="", style="Muted.TLabel")
+        self.l_dphist.pack(side="left", padx=(10, 0))
+        g.columnconfigure(4, weight=1)
+
+        g = ttk.LabelFrame(body, text="Published departure", padding=(10, 8))
+        g.pack(fill="x", pady=8)
+        ttk.Label(g, text="SID:").grid(row=0, column=0, sticky="w")
+        self.cb_dpsid = ttk.Combobox(g, textvariable=self.v_dpsid, state="readonly", width=26)
+        self.cb_dpsid.grid(row=0, column=1, sticky="w", padx=(4, 8))
+        ttk.Label(g, text="Transition:").grid(row=0, column=2, sticky="e", padx=(8, 0))
+        self.cb_dptrans = ttk.Combobox(g, textvariable=self.v_dptrans, state="readonly", width=16)
+        self.cb_dptrans.grid(row=0, column=3, sticky="w", padx=(4, 8))
+        ttk.Checkbutton(g, text="load it into the GPS", variable=self.v_dpload).grid(
+            row=0, column=4, sticky="w")
+        self.l_dpsid = ttk.Label(g, text="", style="Muted.TLabel",
+                                 wraplength=self.theme.px(700), justify="left")
+        self.l_dpsid.grid(row=1, column=0, columnspan=5, sticky="w", pady=(6, 0))
+        g.columnconfigure(4, weight=1)
+
+        g = ttk.LabelFrame(body, text="Weather", padding=(10, 8))
+        g.pack(fill="x", pady=(0, 8))
+        ttk.Combobox(g, textvariable=self.v_dpwx, state="readonly", width=46,
+                     values=[t for _, t in self.APPR_WX]).pack(side="left")
+        ttk.Label(g, text="   heat and height decide this one",
+                  style="Muted.TLabel").pack(side="left", padx=(8, 0))
+
+        g = ttk.LabelFrame(body, text="Set up this session", padding=(10, 6))
+        g.pack(fill="x", pady=(0, 8))
+        tv = ttk.Treeview(g, columns=("apt", "rwy", "sid", "why"), show="headings", height=4,
+                          selectmode="browse")
+        for col, hd, w in (("apt", "Airport", 230), ("rwy", "Runway", 80),
+                           ("sid", "Departure", 110), ("why", "How hard", 230)):
+            tv.heading(col, text=hd)
+            tv.column(col, width=self.theme.px(w), anchor="w")
+        self.theme.fit_columns(tv)
+        tv.pack(fill="x")
+        tv.bind("<<TreeviewSelect>>", lambda ev: self.dep_from_list())
+        self.tv_dphist = tv
+
+        self.dp_txt = ScrolledText(win, wrap="word", height=9, font=MONO)
+        self.theme.track(self.dp_txt, "text")
+        self.dp_txt.pack(fill="both", expand=True, padx=12)
+        self.dp_txt.config(state="disabled")
+
+        foot = ttk.Frame(win, style="Bg.TFrame", padding=(12, 8, 12, 12))
+        foot.pack(fill="x")
+        ttk.Button(foot, text="Put me on the runway  ››", style="Big.TButton",
+                   command=self.departure_go).pack(side="left")
+        ttk.Label(foot, text="  Leave this open - press it again for another go.",
+                  style="MutedBg.TLabel").pack(side="left")
+        ttk.Button(foot, text="Close", style="Quiet.TButton",
+                   command=lambda: (self.save_cfg(), self.theme.forget(win),
+                                    win.destroy())).pack(side="right")
+
+        self._dp_opts, self._dp_procs = [], None
+
+        def refresh(*_a):
+            if not win.winfo_exists():
+                return
+            a = self.dep_airport()
+            if not a:
+                self.l_dpname.config(text="not found in your scenery")
+                self.cb_dprwy["values"] = []
+                self._dp_opts = []
+                self.set_text(self.dp_txt, "Type an airport code that exists in your X-Plane scenery.")
+                return
+            where = ", ".join(x for x in (a.get("city"), a.get("state"),
+                                          a.get("country") or a.get("iso")) if x)
+            self.l_dpname.config(text=f"{a['name']}  -  {a['elev']:,} ft"
+                                      + (f"  -  {where}" if where else ""))
+            wx = self.approach_wx(self.dep_wx_key(), a["id"])
+            # for a departure the instrument runway means nothing: length and wind do
+            opts = sorted(xp_approach.runway_options(a, wx, core),
+                          key=lambda o: (-o["head"], -o["len"]))
+            self._dp_opts = opts
+            labels = []
+            for o in opts:
+                bits = [f"{o['end']:<3}", f"{o['len']:>6,} ft", (o.get("surface") or "paved")]
+                bits.append(f"{o['head']:+.0f} kt head" if abs(o["head"]) >= 1 else "calm")
+                if o["cross"] >= 5:
+                    bits.append(f"{o['cross']:.0f} across")
+                labels.append("   ".join(bits))
+            self.cb_dprwy["values"] = labels
+            if self.v_dprwy.get() not in labels:
+                self.v_dprwy.set(labels[0] if labels else "")
+            self.dep_fill_sids(a)
+            self.draw_departure(a, wx)
+        self._dp_refresh = refresh
+        for v in (self.v_dpid, self.v_dprwy, self.v_dpwx, self.v_dpsid, self.v_dptrans):
+            v.trace_add("write", lambda *a: self.debounce("dep", refresh, 200))
+        e.bind("<Return>", lambda ev: refresh())
+        refresh()
+        if start:
+            self.dep_record(start)
+        self.dep_sync()
+
+    #: where "Find me one" looks for a departure worth flying
+    DEP_SCOPE = [
+        ("hard", "somewhere hard to get out of"),
+        ("plan", "within the plan area"),
+        ("home", "near my home base"),
+        ("any", "anywhere in my scenery"),
+    ]
+
+    def dep_wx_key(self):
+        txt = self.v_dpwx.get()
+        return next((k for k, t in self.APPR_WX if t == txt), "clear")
+
+    def dep_scope_key(self):
+        txt = self.v_dpscope.get()
+        return next((k for k, t in self.DEP_SCOPE if t == txt), "hard")
+
+    def dep_airport(self):
+        ident = self.v_dpid.get().strip().upper()
+        return next((x for x in (self.airports or []) if x["id"].upper() == ident), None)
+
+    def dep_choice(self):
+        """(airport, runway option) currently selected in the departure window."""
+        a = self.dep_airport()
+        if not a or not self._dp_opts:
+            return None, None
+        vals = list(self.cb_dprwy["values"])
+        i = vals.index(self.v_dprwy.get()) if self.v_dprwy.get() in vals else 0
+        return a, self._dp_opts[i]
+
+    def dep_high_ft(self, a):
+        """The highest ground we know of near the field, without going online for it."""
+        try:
+            t = self.terrain_for()
+            return t.near_airport_high(a["lat"], a["lon"])
+        except Exception:
+            return None
+
+    def terrain_for(self):
+        """The terrain helper, built from the airports we already have."""
+        if getattr(self, "_terr", None) is None:
+            self._terr = xp_terrain.Terrain(core.CACHE_DIR, self.airports or [], online=False)
+        return self._terr
+
+    def dep_procs(self, a):
+        """The published procedures for this airport, read once and kept."""
+        key = a["id"].upper()
+        if getattr(self, "_dp_procs_key", None) != key:
+            try:
+                self._dp_procs = xp_procs.read(self.root(), key)
+            except Exception:
+                self._dp_procs = None
+            self._dp_procs_key = key
+        return self._dp_procs
+
+    def dep_fill_sids(self, a):
+        """What this runway actually publishes, out of your own nav data."""
+        _a, opt = self.dep_choice()
+        procs = self.dep_procs(a)
+        names = []
+        if procs and opt:
+            names = procs.sids_for(opt["end"])
+        self.cb_dpsid["values"] = ["(none - straight out)"] + names
+        if self.v_dpsid.get() not in self.cb_dpsid["values"]:
+            self.v_dpsid.set(names[0] if names else "(none - straight out)")
+        proc = procs.get("SID", self.v_dpsid.get()) if procs else None
+        trans = proc.transitions if proc else []
+        self.cb_dptrans["values"] = ["(none)"] + trans
+        if self.v_dptrans.get() not in self.cb_dptrans["values"]:
+            self.v_dptrans.set("(none)")
+        if not procs:
+            root = self.root()
+            if xp_procs.have_cifp(root):
+                self.l_dpsid.config(text=f"No coded procedures for {a['id']} in your nav data - "
+                                         f"it has some for other airports, just not this one.")
+            else:
+                self.l_dpsid.config(
+                    text="No CIFP folder in this X-Plane install, so there are no published "
+                         "departures to offer. X-Plane ships them, and Navigraph replaces them; "
+                         "without either, use 'straight out'.")
+        elif names:
+            self.l_dpsid.config(text=f"{len(names)} published off runway {opt['end'] if opt else '?'}, "
+                                     f"read from {getattr(procs.source, 'name', 'your nav data')}.")
+        else:
+            self.l_dpsid.config(text=f"{a['id']} publishes departures, but none off runway "
+                                     f"{opt['end'] if opt else '?'}.")
+
+    def dep_route(self):
+        """(sid name, [waypoints], {ident: (lat, lon)}) for what is selected."""
+        a, opt = self.dep_choice()
+        name = self.v_dpsid.get()
+        if not a or not opt or name.startswith("("):
+            return None, [], {}
+        procs = self.dep_procs(a)
+        if not procs:
+            return None, [], {}
+        trans = self.v_dptrans.get()
+        route = procs.route("SID", name, opt["end"], None if trans.startswith("(") else trans)
+        if not route:
+            return name, [], {}
+        try:
+            pos = xp_procs.positions(self.root(), route, core)
+        except Exception:
+            pos = {}
+        return name, route, pos
+
+    def draw_departure(self, a, wx):
+        opt = self.dep_choice()[1]
+        ac = self.ac()
+        high = self.dep_high_ft(a)
+        got = xp_departure.assess(ac, a, opt, wx, core, high)
+        score, why = xp_departure.interest(a, self._dp_opts, ac, wx, core, high)
+        procs = self.dep_procs(a)
+        sids = procs.sids_for(opt["end"]) if (procs and opt) else []
+        lines = xp_departure.brief(a, opt, ac, wx, core, got, high, sids, why, score)
+        name, route, pos = self.dep_route()
+        if name and route:
+            missing = [w for w in route if w not in pos]
+            lines.insert(0, f"{name}: " + " → ".join(route)
+                         + (f"   ({len(missing)} waypoint(s) not in your fix data: "
+                            f"{', '.join(missing)})" if missing else ""))
+            proc = procs.get("SID", name)
+            odd = proc.unflyable(opt["end"]) if proc else []
+            if odd:
+                lines.insert(1, f"   {len(odd)} leg(s) of it are headings, arcs or holds rather "
+                                f"than waypoints - those are left out. Fly the plate.")
+            lines.insert(2, "")
+        elif name:
+            lines.insert(0, f"{name} is published here, but none of its legs are plain waypoints - "
+                            f"nothing useful to put in the GPS. Fly the plate.")
+            lines.insert(1, "")
+        self.l_dpwhy.config(text=xp_departure.one_liner(score)
+                            + (f"   (score {score})" if score else ""))
+        self.set_text(self.dp_txt, "\n".join(lines))
+
+    # ---- picking a field worth the trouble --------------------------------
+    def dep_pool(self, scope):
+        if scope in ("plan", "home", "any"):
+            return self.appr_pool(scope)
+        return self.appr_pool("plan")
+
+    def dep_another(self):
+        """Find a departure worth flying, rather than the same field again."""
+        scope = self.dep_scope_key()
+        core.save_config(dep_scope=scope)
+        pool = self.dep_pool(scope)
+        if not pool:
+            messagebox.showinfo("Departure", "No airport in your scenery fits that.")
+            return
+        here = self.v_dpid.get().strip().upper()
+        recent = {h["id"].upper() for h in self.dep_hist[-12:]}
+        pool = ([a for a in pool if a["id"].upper() != here and a["id"].upper() not in recent]
+                or [a for a in pool if a["id"].upper() != here] or pool)
+        if scope != "hard":
+            self.v_dpid.set(random.choice(pool)["id"])
+            self.dep_record(self.v_dpid.get())
+            return
+        # "somewhere hard": score a handful and take the best, rather than all 38,000
+        ac, best, best_score = self.ac(), None, -1.0
+        for a in random.sample(pool, min(60, len(pool))):
+            wx = self.approach_wx(self.dep_wx_key(), a["id"])
+            opts = xp_approach.runway_options(a, wx, core)
+            if not opts:
+                continue
+            s, _why = xp_departure.interest(a, opts, ac, wx, core, self.dep_high_ft(a))
+            if s > best_score:
+                best, best_score = a, s
+        if best is None:
+            best = random.choice(pool)
+        self.v_dpid.set(best["id"])
+        self.dep_record(best["id"])
+
+    def dep_record(self, ident):
+        a = next((x for x in (self.airports or [])
+                  if x["id"].upper() == str(ident).strip().upper()), None)
+        if not a:
+            return
+        wx = self.approach_wx(self.dep_wx_key(), a["id"])
+        opts = xp_approach.runway_options(a, wx, core)
+        opts = sorted(opts, key=lambda o: (-o["head"], -o["len"]))
+        score, _why = xp_departure.interest(a, opts, self.ac(), wx, core, self.dep_high_ft(a))
+        row = {"id": a["id"], "name": a.get("name", ""),
+               "rwy": (opts[0]["end"] if opts else "?"),
+               "sid": self.v_dpsid.get() if not self.v_dpsid.get().startswith("(") else "",
+               "score": score, "why": xp_departure.one_liner(score),
+               "wx": self.v_dpwx.get()}
+        same = next((i for i, h in enumerate(self.dep_hist)
+                     if (h["id"], h["rwy"], h["wx"]) == (row["id"], row["rwy"], row["wx"])), None)
+        if same is not None:
+            self.dep_i = same
+        else:
+            self.dep_hist.append(row)
+            self.dep_i = len(self.dep_hist) - 1
+        self.dep_sync()
+
+    def dep_step(self, d):
+        if not self.dep_hist:
+            return
+        i = max(0, min(len(self.dep_hist) - 1, self.dep_i + d))
+        if i == self.dep_i:
+            return
+        self.dep_i = i
+        self.dep_apply(self.dep_hist[i])
+
+    def dep_from_list(self):
+        if getattr(self, "_dep_mute", False):
+            return
+        try:
+            sel = self.tv_dphist.selection()
+        except tk.TclError:
+            return
+        if not sel:
+            return
+        try:
+            i = int(sel[0])
+        except ValueError:
+            return
+        if 0 <= i < len(self.dep_hist) and i != self.dep_i:
+            self.dep_i = i
+            self.dep_apply(self.dep_hist[i])
+
+    def dep_apply(self, row):
+        self._dep_mute = True
+        try:
+            self.v_dpid.set(row["id"])
+            if row.get("wx"):
+                self.v_dpwx.set(row["wx"])
+        finally:
+            self._dep_mute = False
+        self.dep_sync()
+        if getattr(self, "_dp_refresh", None):
+            self.debounce("dep", self._dp_refresh, 60)
+
+    def dep_sync(self):
+        try:
+            self.fill_start()
+        except Exception:
+            pass
+        tv = getattr(self, "tv_dphist", None)
+        if tv is None:
+            return
+        try:
+            if not tv.winfo_exists():
+                return
+            self._dep_mute = True
+            tv.delete(*tv.get_children())
+            for i, h in enumerate(self.dep_hist):
+                tv.insert("", "end", iid=str(i),
+                          values=(f"{h['id']}  {h['name']}".strip(), h["rwy"],
+                                  h.get("sid") or "straight out", h.get("why", "")))
+            if 0 <= self.dep_i < len(self.dep_hist):
+                tv.selection_set(str(self.dep_i))
+                tv.see(str(self.dep_i))
+            self._dep_mute = False
+            n = len(self.dep_hist)
+            self.l_dphist.config(text=f"{self.dep_i + 1} of {n}" if n else "")
+            self.b_dpback.state(["!disabled"] if self.dep_i > 0 else ["disabled"])
+            self.b_dpfwd.state(["!disabled"] if self.dep_i < n - 1 else ["disabled"])
+        except tk.TclError:
+            self._dep_mute = False
+
+    def dep_charts(self):
+        a = self.dep_airport()
+        if not a:
+            messagebox.showinfo("Charts", "Type an airport code first.")
+            return
+        m = tk.Menu(self, tearoff=0)
+        self.chart_menu_items(m, a, "departure")
+        self._popup(m)
+
+    # ---- and into the sim --------------------------------------------------
+    def departure_go(self):
+        a, opt = self.dep_choice()
+        if not a or not opt:
+            messagebox.showinfo("Departure", "Pick an airport and a runway first.")
+            return
+        acf = self.selected_acf()
+        if not acf:
+            messagebox.showinfo("Departure", "Choose an aircraft on the left first.")
+            return
+        self.dep_record(a["id"])
+        key = self.dep_wx_key()
+        if key == "leave":
+            weather = None
+        elif key == "real":
+            weather = "use_real_weather"
+        else:
+            wx = self.approach_wx(key, a["id"])
+            weather = wx.to_xplane(a["lat"], a["lon"], a["elev"])
+        lv = self.v_livery.get()
+        flight = link.build_flight(acf, None if lv == "(default)" else lv,
+                                   link.runway_start(a["id"], opt["end"]),
+                                   None, weather, True, system_time=False)
+        core.save_config(dep_wx=key, dep_load=self.v_dpload.get(),
+                         dep_last=[a["id"], opt["end"], key])
+        name, route, pos = self.dep_route()
+        fms_text = None
+        if self.v_dpload.get() and route:
+            try:
+                fms_text, used = xp_departure.fms(a, route, pos, a["elev"] + 6000)
+                if not used:
+                    fms_text = None
+            except Exception:
+                fms_text = None
+        (core.CACHE_DIR / "last_flight.json").write_text(json.dumps({"data": flight}, indent=2))
+        api = self.api()
+        root = self.root()
+        label = f"{a['id']} runway {opt['end']}" + (f", {name}" if name and fms_text else "")
+
+        def work():
+            ok, msg = api.check()
+            if not ok:
+                self.log(msg)
+                self.ui(lambda: messagebox.showerror("X-Plane", msg))
+                return
+            try:
+                api.start_flight(flight)
+            except link.XPlaneError as e:
+                m = str(e)
+                self.log(f"Departure setup failed: {m}")
+                self.ui(lambda: messagebox.showerror("Departure", m))
+                return
+            self.log(f"On the runway: {label}")
+            if fms_text:
+                try:
+                    link.send_route_to_plugin(root, fms_text, wait_for_new_flight=False)
+                    self.log(f"{name} sent to the GPS ({len(route)} waypoints).")
+                except Exception as e:
+                    self.log(f"Couldn't send the departure to the GPS: {e}")
+            self.ui(lambda: self.v_status.set(f"On the runway at {label} - press it again "
+                                              f"for another go."))
+        threading.Thread(target=work, daemon=True).start()
+
     def set_text(self, widget, text):
         """Replace the contents of a read-only text box."""
         widget.config(state="normal")
@@ -4546,7 +5055,8 @@ class App(tk.Tk):
             state=(self.v_state.get().strip() or None) if area == "state" else None,
             country=iso if area in ("country", "state") else "ANY",
             continent=self.v_continent.get() if area == "continent" else None,
-            include_private=self.v_private.get(), max_leg=self.num(self.v_maxleg, 0) or None)
+            include_private=self.v_private.get(), max_leg=self.num(self.v_maxleg, 0) or None,
+            hard_dep=bool(self.v_harddep.get()))
         if area == "near" and not opts.near:
             raise RuntimeError("Type the airport to search near (Where > Near).")
         if area in ("country", "state") and not iso:
@@ -5306,6 +5816,27 @@ class App(tk.Tk):
         for name, col in (("ok", c["ok"]), ("bad", c["bad"]), ("accent", c["accent"]), ("lifr", c["lifr"])):
             t.tag_configure(name, foreground=col, font=(fam, 10, "bold"))
 
+    def brief_departure(self, line, idea, ac):
+        """One line about getting out, when getting out is worth a line.
+
+        Most departures are a non-event and saying so every time would be noise, so
+        this stays quiet below the threshold.
+        """
+        try:
+            a = idea.stops[0]
+            opts = xp_approach.runway_options(a, idea.wx, core)
+            if not opts:
+                return
+            score, why = xp_departure.interest(a, opts, ac, idea.wx, core, self.dep_high_ft(a))
+            if score < xp_departure.STANDARD_GRADIENT / 100.0:      # 2.0
+                return
+            line("GETTING OUT", "label")
+            line(xp_departure.one_liner(score), "twist" if score >= 6 else "note")
+            for w in why[:3]:
+                line("  - " + w, "small")
+        except Exception:
+            return
+
     def show_brief(self):
         idea, ac = self.idea, self.ac()
         reveal = id(idea) in self.revealed
@@ -5319,6 +5850,7 @@ class App(tk.Tk):
 
         line(idea.title, "h1")
         line(f"{core.MISSIONS[idea.kind]}   \u00b7   {ac['name']}", "sub")
+        self.brief_departure(line, idea, ac)
 
         stops = idea.stops
         if idea.hidden and not reveal:

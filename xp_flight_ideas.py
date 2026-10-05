@@ -39,7 +39,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from xp_wx import CONTINENTS, in_area   # noqa: E402  (lat/lon boxes for continents)
 
-VERSION = "6.13.1"
+VERSION = "6.14"
 CACHE_DIR = Path.home() / ".xp_flight_ideas"
 CACHE_FORMAT = 10
 
@@ -1169,6 +1169,35 @@ class Generator:
              * self.scenery_weight(a) for a in cands]
         return self.rng.choices(cands, weights=w, k=1)[0]
 
+    def dep_interest(self, a):
+        """How interesting this field is to LEAVE, cheaply.
+
+        Deliberately crude - no weather, no climb maths - because this runs over
+        every airport in the pool. The real numbers are worked out once, for the
+        one field that gets picked, in xp_departure.
+        """
+        w = 0.0
+        elev = a.get("elev") or 0
+        if elev >= 8000:
+            w += 4.0
+        elif elev >= 6000:
+            w += 2.5
+        elif elev >= 4000:
+            w += 1.2
+        rwys = [r for r in (a.get("rwys") or []) if r.get("s") != "helipad"]
+        if rwys:
+            longest = max((r.get("len") or 0) for r in rwys)
+            need = float(self.ac.get("min_rwy") or 1600)
+            if longest and longest < need * 1.3:
+                w += 3.0
+            elif longest < need * 1.8:
+                w += 1.5
+            if any((r.get("s") or "") in SOFT for r in rwys):
+                w += 1.0
+            if len(rwys) == 1:
+                w += 0.5
+        return w
+
     def home(self):
         if self.fixed_home:
             return self.fixed_home
@@ -1176,7 +1205,16 @@ class Generator:
             cands = [a for a in self.pool if d(a, self.center) <= (self.args.radius or 150)] + [self.center]
         else:
             cands = self.pool
-        return self.pick(cands, lambda a: 3 if (a["tower"] or len(a["id"]) == 4 and a["id"].isalpha()) else 1)
+
+        def base(a):
+            return 3 if (a["tower"] or len(a["id"]) == 4 and a["id"].isalpha()) else 1
+
+        if getattr(self.args, "hard_dep", False):
+            # The departure is the interesting half today, so weight the origin by it.
+            # Squared, because a merely linear weight gets swamped by the sheer number
+            # of ordinary fields and you end up with the same flights as before.
+            return self.pick(cands, lambda a: base(a) * (1.0 + self.dep_interest(a)) ** 2)
+        return self.pick(cands, base)
 
     def R(self, frac=1.0, cap=None):
         r = self.ac["range"] * frac

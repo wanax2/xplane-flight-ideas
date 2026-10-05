@@ -179,6 +179,27 @@ def interest(apt, opts, ac, wx, core, high_ft=None, weight_frac=1.0):
     return round(score, 1), why
 
 
+def fms(apt, route, pos, top_ft=None):
+    """An .fms 1100 plan that flies a departure's waypoints out of this airport.
+
+    The waypoints go in as type 28 (plain lat/lon) rather than by name, because the
+    GPS only knows the names in its own cycle and we already know where they are.
+    Anything we have no position for is dropped - silently in the file, loudly in
+    the briefing.
+    """
+    elev = float(apt.get("elev") or 0)
+    top = float(top_ft or (elev + 6000))
+    rows = [f"1 {apt['id']} ADEP {elev:.6f} {apt['lat']:.6f} {apt['lon']:.6f}"]
+    got = [w for w in route if w in pos]
+    for i, name in enumerate(got):
+        la, lo = pos[name]
+        rows.append(f"28 {name} {'ADES' if i == len(got) - 1 else 'DRCT'} "
+                    f"{top:.6f} {la:.6f} {lo:.6f}")
+    head = ["I", "1100 Version", "CYCLE 2409", f"ADEP {apt['id']}",
+            f"ADES {got[-1] if got else apt['id']}", f"NUMENR {len(rows)}"]
+    return "\n".join(head + rows) + "\n", got
+
+
 def one_liner(score):
     if score >= 9:
         return "This one is the flight."
