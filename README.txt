@@ -1,4 +1,4 @@
-X-PLANE FLIGHT IDEAS  v6.13
+X-PLANE FLIGHT IDEAS  v6.13.1
 ========================
 
 Files
@@ -830,6 +830,23 @@ WHERE THE ONLINE DATA COMES FROM
    All of them are optional. The app works with no internet at all - it just
    uses your own X-Plane scenery instead.
 
+
+WHAT'S NEW IN 6.13.1
+   - A "Charts" button in the approach window, and better chart links on the
+     route menu: the FAA's IFP Gateway (every US approach, departure and arrival,
+     official and current), the FAA's digital terminal procedures, AirNav,
+     SkyVector, OpenNav and OpenAIP. All free, no account. The first stop on a
+     route gets the departure wording, the rest get approaches.
+   - Two new modules, groundwork for the departure work that is still being
+     built, both usable on their own:
+       xp_procs.py      reads the real SIDs, STARs and approaches out of your own
+                        CIFP data - Navigraph's cycle if you have it, X-Plane's
+                        own if you don't - with the runway each one serves and
+                        the waypoints it strings together.
+       xp_departure.py  the numbers for getting out: density altitude, rate of
+                        climb left at that altitude, the gradient that gives you
+                        in feet per nautical mile, and whether it clears the 200
+                        ft/nm a published departure assumes.
 
 WHAT'S NEW IN 6.13
    - Practise an approach stopped offering the same airport every time. It used

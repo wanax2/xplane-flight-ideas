@@ -55,6 +55,7 @@ import xp_checkride                    # noqa: E402
 import xp_history                      # noqa: E402
 import xp_world                        # noqa: E402
 import xp_packs                        # noqa: E402
+import xp_charts                       # noqa: E402
 import xp_fleet                        # noqa: E402
 import xp_acf                           # noqa: E402
 import xp_score                         # noqa: E402
@@ -3742,6 +3743,8 @@ class App(tk.Tk):
                                   command=lambda: self.appr_step(1))
         self.b_apfwd.pack(side="left", padx=(2, 10))
         ttk.Button(nav, text="Pick another airport", command=self.appr_another).pack(side="left")
+        ttk.Button(nav, text="Charts ▾", style="Quiet.TButton",
+                   command=self.appr_charts).pack(side="left", padx=(6, 0))
         ttk.Label(nav, text="  from").pack(side="left")
         ttk.Combobox(nav, textvariable=self.v_apscope, state="readonly", width=30,
                      values=[t for _, t in self.APPR_SCOPE]).pack(side="left", padx=4)
@@ -7212,11 +7215,19 @@ class App(tk.Tk):
             return Path(d)
         return None
 
+    def chart_menu_items(self, menu, a, kind="all"):
+        """Fill a menu with the free chart links for one airport."""
+        import webbrowser
+        got = xp_charts.links(a, core, kind)
+        for label, url, why in got:
+            menu.add_command(label=f"{label}   -   {why}",
+                             command=lambda u=url: webbrowser.open(u))
+        return bool(got)
+
     def charts_menu(self):
         """Links to free charts for each airport on the route."""
         if not self.idea:
             return
-        import webbrowser
         m = tk.Menu(self, tearoff=0)
         seen = []
         for a in self.route_stops():
@@ -7224,30 +7235,22 @@ class App(tk.Tk):
                 continue
             seen.append(a["id"])
             sub = tk.Menu(m, tearoff=0)
-            ident = a["id"]
-            us = core.is_us(a)
-            if us:
-                code = ident[1:] if len(ident) == 4 and ident.startswith("K") else ident
-                sub.add_command(label="FAA approach plates and airport diagram (free)",
-                                command=lambda c=code: webbrowser.open(
-                                    f"https://www.airnav.com/cgi-bin/airport-search?name={c}"))
-                sub.add_command(label="FAA digital terminal procedures",
-                                command=lambda c=ident: webbrowser.open(
-                                    "https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/"
-                                    f"dtpp/search/?cycle=current&ident={c}"))
-                sub.add_command(label="AirNav airport page",
-                                command=lambda c=ident: webbrowser.open(
-                                    f"https://www.airnav.com/airport/{c}"))
-            sub.add_command(label="SkyVector chart",
-                            command=lambda c=ident: webbrowser.open(f"https://skyvector.com/airport/{c}"))
-            sub.add_command(label="OpenAIP (worldwide, free)",
-                            command=lambda c=ident: webbrowser.open(f"https://www.openaip.net/?search={c}"))
-            if a.get("wiki"):
-                sub.add_command(label="Wikipedia article",
-                                command=lambda u=a["wiki"]: webbrowser.open(u))
-            m.add_cascade(label=f"{ident}  {a['name'][:34]}", menu=sub)
+            # the first stop is the one you leave, so it gets the departure wording
+            self.chart_menu_items(sub, a, "departure" if a is self.route_stops()[0] else "approach")
+            m.add_cascade(label=f"{a['id']}  {a['name'][:34]}", menu=sub)
         if not seen:
             return
+        self._popup(m)
+
+    def appr_charts(self):
+        """The plates for whatever airport the approach window is showing."""
+        a = next((x for x in (self.airports or [])
+                  if x["id"].upper() == self.v_apid.get().strip().upper()), None)
+        if not a:
+            messagebox.showinfo("Charts", "Type an airport code first.")
+            return
+        m = tk.Menu(self, tearoff=0)
+        self.chart_menu_items(m, a, "approach")
         self._popup(m)
 
     # ======================================================================
