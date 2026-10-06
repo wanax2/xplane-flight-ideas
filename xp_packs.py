@@ -36,6 +36,8 @@ a timestamped copy of the file it replaced.
 """
 from __future__ import annotations
 
+import itertools
+import os
 import re
 import time
 from pathlib import Path
@@ -130,6 +132,28 @@ def parse(text):
     return out, header
 
 
+def folder_for(entry, custom_scenery=None):
+    """Where this entry's folder actually is on disk, or None.
+
+    Most lines are relative ("Custom Scenery/Whatever/"), but a pack can live
+    anywhere and be listed by absolute path - a streaming package like XPME writes
+    one of those, pointing at its own folder on another drive. Resolving an absolute
+    path against Custom Scenery is how you come to tell someone their scenery has
+    vanished when it is sitting there perfectly well two drives over, and then offer
+    to helpfully delete the line.
+    """
+    p = (entry.path or "").strip().rstrip("/").rstrip("\\")
+    if not p:
+        return None
+    windows_abs = len(p) > 2 and p[1] == ":" and p[2] in "\\/"
+    unc = p.startswith("\\\\")
+    if windows_abs or unc or p.startswith("/"):
+        return Path(p.replace("\\", "/"))
+    if custom_scenery:
+        return Path(custom_scenery) / entry.name
+    return None
+
+
 def classify(entry, custom_scenery=None):
     """What kind of pack this is. The folder itself is the best evidence."""
     p = entry.path.strip()
@@ -141,8 +165,8 @@ def classify(entry, custom_scenery=None):
         return entry
     folder = None
     if custom_scenery:
-        folder = Path(custom_scenery) / entry.name
-        if not folder.is_dir():
+        folder = folder_for(entry, custom_scenery)
+        if folder is None or not folder.is_dir():
             folder = None
             entry.note = "this folder isn't there any more"
             entry.kind = "gone"
@@ -302,6 +326,51 @@ def problems(entries, custom_scenery=None, extra_folders=None):
     if dupes:
         out.append(("dupes", f"{len(dupes)} pack(s) are listed twice.",
                     "Duplicates: " + ", ".join(dupes[:5]) + "."))
+
+    hollow = unmounted(entries, custom_scenery)
+    if hollow:
+        out.append(("hollow", f"{len(hollow)} pack(s) have scenery tiles but no terrain to draw "
+                              f"them with.",
+                    "X-Plane will cancel every tile in them and fall back to default ground: "
+                    + ", ".join(hollow[:4]) + ("..." if len(hollow) > 4 else "")
+                    + ". Either the imagery half never finished extracting, or it's a streaming "
+                      "package like XPME that creates its terrain folder only while it is "
+                      "running - in which case start it before X-Plane and check the folder "
+                      "appears."))
+    return out
+
+
+def unmounted(entries, custom_scenery=None):
+    """Packs with DSF tiles and nothing to texture them with.
+
+    A folder with Earth nav data full of .dsf files but no terrain, no textures, no
+    apt.dat and no library.txt is a pack X-Plane cannot draw: it looks for
+    'terrain/....ter', doesn't find it, and cancels the tile. That is what a
+    half-extracted ortho set looks like, and it is also exactly what a streaming
+    package looks like when the thing that streams it isn't running.
+    """
+    out = []
+    if not custom_scenery:
+        return out
+    for e in entries:
+        if not e.enabled or e.kind in ("global", "global_airports", "gone"):
+            continue
+        folder = folder_for(e, custom_scenery)
+        if folder is None or not folder.is_dir():
+            continue
+        end = folder / "Earth nav data"
+        try:
+            if not end.is_dir():
+                continue
+            if (folder / "library.txt").exists() or (end / "apt.dat").exists():
+                continue
+            if (folder / "terrain").is_dir() or (folder / "textures").is_dir():
+                continue
+            if not any(True for _ in itertools.islice(end.rglob("*.dsf"), 1)):
+                continue
+        except OSError:
+            continue
+        out.append(e.name)
     return out
 
 
@@ -349,14 +418,60 @@ def backup_name(path):
 
 
 def write(path, entries, header="I"):
-    """Write the new order, keeping a copy of what was there. Returns the backup's path."""
+    """Write the new order, keeping a copy of what was there. Returns the backup's path.
+
+    Written to a temporary file beside it and then moved into place, because a
+    half-written scenery_packs.ini is the worst thing this app could leave behind:
+    X-Plane would start with most of the scenery missing and nothing to say why.
+    os.replace is atomic on Windows and on POSIX, so the file ends up as either the
+    old one or the new one and never something in between. The backup is written
+    and flushed to disk before anything is touched.
+    """
     path = Path(path)
+    body = render(entries, header)
     backup = None
     if path.exists():
+        old = path.read_text(encoding="utf-8", errors="replace")
         backup = backup_name(path)
-        backup.write_text(path.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
-    path.write_text(render(entries, header), encoding="utf-8")
+        with open(backup, "w", encoding="utf-8") as f:
+            f.write(old)
+            f.flush()
+            os.fsync(f.fileno())
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(body)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+        raise
     return backup
+
+
+def writable(path):
+    """(ok, why) - whether this file could actually be rewritten, checked before trying.
+
+    Finding out halfway through that the folder is read-only is how you end up with
+    a backup and no scenery_packs.ini.
+    """
+    path = Path(path)
+    folder = path.parent
+    if not folder.is_dir():
+        return False, f"There's no folder at {folder}."
+    if not os.access(folder, os.W_OK):
+        return False, (f"Windows won't let this app write into {folder}. If X-Plane is "
+                       f"installed under Program Files, that folder needs administrator "
+                       f"rights - or move the install somewhere else.")
+    if path.exists() and not os.access(path, os.W_OK):
+        return False, (f"{path.name} is read-only. Clear the read-only tick in its "
+                       f"Properties, or close whatever has it open.")
+    return True, ""
 
 
 # ==========================================================================

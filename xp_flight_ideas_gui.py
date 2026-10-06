@@ -1677,6 +1677,82 @@ class App(tk.Tk):
     def ui(self, fn):
         self.q.put(("call", fn))
 
+    # ======================================================================
+    # When things go wrong off the main thread
+    # ======================================================================
+    @staticmethod
+    def explain(e, what="that"):
+        """One exception, in words worth showing someone.
+
+        Everything in here runs against something this app doesn't control - a
+        simulator that may not be running, archives on the far side of the
+        internet, a folder Windows may not let us write. Those failures are
+        normal. A traceback in a log nobody reads is not an answer to them.
+        """
+        import json as _json
+        import socket
+        import ssl
+        import urllib.error
+        name = getattr(e, "__class__", type(e)).__name__
+        msg = str(e) or name
+        net = "Both are free public services, so this is usually the internet, not you."
+        if isinstance(e, urllib.error.HTTPError):
+            if e.code in (429, 503):
+                return (f"The service is busy and asked us to wait ({e.code}) while {what}. "
+                        f"Give it a minute and try again.")
+            if e.code in (401, 403):
+                return (f"That service refused us ({e.code}) while {what}. It may want an "
+                        f"account, or be blocking this country.")
+            if 500 <= e.code < 600:
+                return (f"The service is broken at their end ({e.code}) while {what}. "
+                        f"Nothing you can fix - try later.")
+            return f"The service answered {e.code} while {what}."
+        if isinstance(e, (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError,
+                          ssl.SSLError, socket.gaierror)):
+            return (f"Couldn't reach the internet while {what} ({msg}). "
+                    f"{net} The rest of the app carries on working.")
+        if isinstance(e, PermissionError):
+            return (f"Windows wouldn't let the app write that file while {what}. "
+                    f"If X-Plane or an editor has it open, close it and try again; "
+                    f"if it's in Program Files, that folder needs admin rights.")
+        if isinstance(e, FileNotFoundError):
+            return f"A file that should be there isn't, while {what}: {msg}"
+        if isinstance(e, IsADirectoryError):
+            return f"That path is a folder, not a file, while {what}: {msg}"
+        if isinstance(e, OSError) and getattr(e, "errno", None) == 28:
+            return f"The disk is full, so {what} couldn't finish."
+        if isinstance(e, OSError):
+            return f"The operating system refused that while {what}: {msg}"
+        if isinstance(e, _json.JSONDecodeError):
+            return (f"The reply while {what} wasn't the data we expected - usually a captive "
+                    f"portal or an error page where the service should have been.")
+        if isinstance(e, (ValueError, KeyError, TypeError, IndexError)):
+            return f"Couldn't make sense of the data while {what}: {name}: {msg}"
+        if isinstance(e, MemoryError):
+            return f"Ran out of memory while {what}."
+        return f"Something went wrong while {what}: {name}: {msg}"
+
+    def run_bg(self, fn, what="that", then=None):
+        """Run fn on a worker thread, and never let a failure vanish into it.
+
+        A daemon thread that raises prints its traceback to a console nobody is
+        looking at and leaves the status bar saying "Working..." for ever. This
+        makes sure that whatever happens, the person is told something true.
+        """
+        def wrapped():
+            try:
+                fn()
+            except Exception as e:                       # noqa: BLE001 - that is the point
+                text = self.explain(e, what)
+                self.log(text)
+                self.ui(lambda: messagebox.showerror("Sorry", text))
+            finally:
+                if then:
+                    self.ui(then)
+        t = threading.Thread(target=wrapped, daemon=True)
+        t.start()
+        return t
+
     def root(self):
         return Path(self.v_root.get().strip())
 
@@ -1778,6 +1854,21 @@ class App(tk.Tk):
     def api(self):
         return link.XPlaneAPI(self.v_host.get().strip() or "127.0.0.1", int(self.v_port.get() or 8086))
 
+    def keep_last_flight(self, flight):
+        """Remember what we sent the sim. Nice to have, never worth failing over."""
+        try:
+            (core.CACHE_DIR / "last_flight.json").write_text(
+                json.dumps({"data": flight}, indent=2), encoding="utf-8")
+        except (OSError, TypeError, ValueError) as e:
+            self.log(f"Couldn't keep a copy of this flight ({e}) - setting it up anyway.")
+
+    def warn_if_not_saving(self):
+        """Say once - not on every tick - that settings have stopped being saved."""
+        if core.SAVE_ERROR and not getattr(self, "_told_save", False):
+            self._told_save = True
+            self.log(f"Settings aren't being saved: {core.SAVE_ERROR}. The app still works, "
+                     f"but it will forget your choices when you close it.")
+
     def save_cfg(self):
         core.save_config(
             xplane_root=self.v_root.get(), acf=self.selected_acf(),
@@ -1807,6 +1898,7 @@ class App(tk.Tk):
             scenery_pref=self.v_scpref.get(), set_fuel=self.v_setfuel.get(),
             callsign=self.v_callsign.get(),
             emergencies=[k for k, v in self.v_emerg.items() if v.get()])
+        self.warn_if_not_saving()
 
     @staticmethod
     def num(var, default):
@@ -1898,7 +1990,7 @@ class App(tk.Tk):
                                                               f"files come from OurAirports, which is "
                                                               f"free and needs no account - so this is "
                                                               f"usually the connection.")))
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "downloading the worldwide airport database")
 
     def load_world(self):
         """Put the worldwide airports in, in place of scenery the app hasn't got."""
@@ -1970,7 +2062,7 @@ class App(tk.Tk):
                 self.ui(lambda e=e: (self.l_scenery.config(text="Couldn't read your scenery - see "
                                                                 "Progress > Messages"),
                                      self.v_status.set(f"Couldn't read your X-Plane folder: {e}")))
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "reading your X-Plane folder")
 
     def after_load(self):
         core.save_config(xplane_root=str(self.root()))
@@ -2181,7 +2273,7 @@ class App(tk.Tk):
             except Exception as e:
                 msg = str(e)
                 self.ui(lambda: self.log(f"Couldn't read Custom Scenery: {msg}"))
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "reading your scenery")
 
     def update_scenery_label(self):
         """The one line in the corner: what the app has actually loaded."""
@@ -3383,7 +3475,7 @@ class App(tk.Tk):
                 return
             self.ui(lambda d=day: self.show_hist_day(d))
 
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "fetching that day's weather")
 
     def hist_failed(self, msg):
         self.v_hstat.set(msg)
@@ -4507,7 +4599,7 @@ class App(tk.Tk):
                     fms_text = None
             except Exception:
                 fms_text = None
-        (core.CACHE_DIR / "last_flight.json").write_text(json.dumps({"data": flight}, indent=2))
+        self.keep_last_flight(flight)
         api = self.api()
         root = self.root()
         label = f"{a['id']} runway {opt['end']}" + (f", {name}" if name and fms_text else "")
@@ -4534,7 +4626,7 @@ class App(tk.Tk):
                     self.log(f"Couldn't send the departure to the GPS: {e}")
             self.ui(lambda: self.v_status.set(f"On the runway at {label} - press it again "
                                               f"for another go."))
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "setting up the departure")
 
     def set_text(self, widget, text):
         """Replace the contents of a read-only text box."""
@@ -4570,6 +4662,7 @@ class App(tk.Tk):
             except Exception:
                 perf = None
         lines = xp_approach.brief(a, opt, nm, ac, wx, core, perf)
+        lines = self.published_approach_lines(a, opt) + lines
         key = self.ap_wx_key()
         if key == "metar" and not self.metar_for(a["id"]):
             lines.insert(0, f"No live report for {a['id']} - press 'Refresh weather' on "
@@ -4654,7 +4747,7 @@ class App(tk.Tk):
                     "ap": self.APPR_AP.get(self.v_apap.get(), "armed"),
                     "want": self.APPR_TYPE.get(self.v_aptype.get(), "auto"),
                     "rnav": self.APPR_RNAV.get(self.v_aprnav.get(), "fixes")}
-        (core.CACHE_DIR / "last_flight.json").write_text(json.dumps({"data": flight}, indent=2))
+        self.keep_last_flight(flight)
         self._appr_last = (a["id"], opt["end"], nm, key)
         api = self.api()
         label = f"{a['id']} runway {opt['end']}, {nm:g} nm final"
@@ -4686,7 +4779,7 @@ class App(tk.Tk):
                 except Exception as e:
                     self.log(f"Couldn't arm the failure: {e}")
             self.ui(lambda: self.v_status.set(f"On final at {label} - press it again for another go."))
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "setting up the approach")
 
     def set_avionics(self, api, spec):
         """Tune the radios, wind the bugs and arm the autopilot, once the sim has settled."""
@@ -4763,7 +4856,7 @@ class App(tk.Tk):
                 self.log(f"Back on final: {ident} runway {end}, {nm:g} nm.")
             except link.XPlaneError as e:
                 self.log(f"Couldn't reset to final: {e}")
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "setting up the approach again")
 
     # ======================================================================
     # Settings
@@ -5287,7 +5380,7 @@ class App(tk.Tk):
                 if then:
                     then(ok)
             self.ui(done)
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "fetching the weather")
 
     def schedule_weather(self):
         job = getattr(self, "_wx_job", None)
@@ -5353,7 +5446,7 @@ class App(tk.Tk):
             except Exception as e:
                 res, err = [], e
             self.ui(lambda: self._show_weather(res, home, err))
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "searching the weather")
 
     def _show_weather(self, res, home, err):
         self.update_wx_age()
@@ -5662,7 +5755,7 @@ class App(tk.Tk):
                 ideas, err = [], e
                 self.log(traceback.format_exc())
             self.ui(lambda: then(ideas, err))
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "finding somewhere scenic")
 
     def anywhere(self):
         """Throw a dart at the planet. No lists, no filters - just somewhere."""
@@ -6195,7 +6288,7 @@ class App(tk.Tk):
                     self.photo_cap.config(text=f"Photo: Wikipedia - {info['title']}  (open article)")
                     self._photo_resize()
             self.ui(done)
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "loading the photo")
 
     def _photo_resize(self):
         def go():
@@ -6252,7 +6345,7 @@ class App(tk.Tk):
                     self.log("Couldn't install Pillow automatically. Open a command prompt and run:  "
                              "py -m pip install pillow\n" + out)
             self.ui(done)
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "installing Pillow")
 
     def show_plane(self):
         rel = self.selected_acf()
@@ -6657,7 +6750,7 @@ class App(tk.Tk):
             ok, msg = api.check()
             self.ui(lambda: self.l_conn.config(text=msg, foreground=self.theme.c["ok"] if ok else "#c00"))
             self.log(msg)
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "testing the connection to X-Plane")
 
     def build_flight_json(self):
         idea = self.idea
@@ -6731,7 +6824,7 @@ class App(tk.Tk):
             messagebox.showerror("Launch", str(e))
             return
         self.save_cfg()
-        (core.CACHE_DIR / "last_flight.json").write_text(json.dumps({"data": flight}, indent=2))
+        self.keep_last_flight(flight)
         idea = self.route_idea()
         hidden = self.idea.hidden and id(self.idea) not in self.revealed
         want_route = self.v_loadroute.get() and not hidden
@@ -6803,7 +6896,7 @@ class App(tk.Tk):
                 self.ui(lambda: self.start_monitor(api, stops, failure, surprise, pool))
             if grade:
                 self.ui(lambda: self.start_grader(idea, acname, stops))
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "setting the flight up in X-Plane")
 
     @staticmethod
     def adapt_failure(f, stops):
@@ -6859,7 +6952,7 @@ class App(tk.Tk):
                 msg = str(e)
                 self.log(f"Airport data download failed: {msg}")
                 self.ui(lambda: messagebox.showerror("Airport data", f"Couldn't download it:\n{msg}"))
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "downloading the airport data")
 
     def _build_online(self, f):
         c = self.cfg
@@ -6964,7 +7057,7 @@ class App(tk.Tk):
             except Exception as e:
                 plans, err = [], e
             self.ui(lambda: self.show_plans(plans, err))
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "searching online routes")
 
     def show_plans(self, plans, err):
         self.online_plans = plans
@@ -7008,7 +7101,7 @@ class App(tk.Tk):
             except Exception as e:
                 idea, err = None, e
             self.ui(lambda: self._online_done(idea, err))
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "loading that route")
 
     def _online_done(self, idea, err):
         if err or not idea:
@@ -7034,7 +7127,7 @@ class App(tk.Tk):
                 self.log(f"Saved {f}")
             except Exception as e:
                 self.log(f"Couldn't download that plan: {e}")
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "downloading that flight plan")
 
     def real_flight(self):
         """Pick something airborne right now and build a flight from it."""
@@ -7068,7 +7161,7 @@ class App(tk.Tk):
             except Exception as e:
                 idea, err, light = None, e, []
             self.ui(lambda: self._real_done(idea, err, len(light)))
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "fetching a real flight")
 
     def _real_done(self, idea, err, n):
         if err or not idea:
@@ -7373,7 +7466,7 @@ class App(tk.Tk):
             except Exception as e:
                 res, err = None, e
             self.ui(lambda: self.show_terrain(res, err, alt))
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "checking the terrain")
 
     def show_terrain(self, res, err, alt):
         if err or not res:
@@ -7400,7 +7493,7 @@ class App(tk.Tk):
             self.ui(lambda: self.l_terr.config(text=txt))
             if raw:
                 self.log("TAF " + dest + ": " + raw)
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "fetching the TAF")
 
     # ---- career --------------------------------------------------------------
     def _build_career(self, f):
@@ -7774,6 +7867,44 @@ class App(tk.Tk):
             return
         self._popup(m)
 
+    def published_approach_lines(self, a, opt):
+        """What is really published here, before the app's own invented numbers.
+
+        The app works out generic minimums for the kind of approach it thinks you are
+        flying. That is fine until you meet a field whose only published procedure has
+        no glideslope at all and a minimum 900 ft above the ground, and the magenta
+        line in your aeroplane cheerfully descends through it.
+        """
+        if not opt:
+            return []
+        try:
+            procs = xp_procs.read(self.root(), a["id"])
+        except Exception:
+            return []
+        if not procs or not procs.approaches:
+            return []
+        names = procs.approaches_for(opt["end"])
+        if not names:
+            return [f"Your nav data has approaches for {a['id']}, but none to runway "
+                    f"{opt['end']}. What follows is this app's own straight-in, not a "
+                    f"procedure anyone published.", ""]
+        kinds = [xp_procs.appch_kind(n) for n in names]
+        words = ", ".join(sorted({w for _l, w, _g in kinds if w}))
+        out = [f"Published to runway {opt['end']}: {', '.join(names)}  ({words})."]
+        if all(gs is False for _l, _w, gs in kinds):
+            out.append("None of them has a glideslope. Whatever vertical guidance your "
+                       "aeroplane draws on a procedure like this is advisory - it does not "
+                       "stop at the minimum descent altitude, and the MDA is the floor.")
+        elif any(gs is None for _l, _w, gs in kinds) and not any(gs for _l, _w, gs in kinds):
+            out.append("These are RNAV procedures: whether this one gives you LPV with a real "
+                       "glidepath, or LNAV only with an advisory one, is on the plate and not "
+                       "in the coded data. If it says LNAV+V, the vertical guidance is advisory "
+                       "and the MDA is still the floor.")
+        out.append("The numbers below are this app's own, for the kind of approach - not off "
+                   "that plate.")
+        out.append("")
+        return out
+
     def appr_charts(self):
         """The plates for whatever airport the approach window is showing."""
         a = next((x for x in (self.airports or [])
@@ -8124,7 +8255,7 @@ class App(tk.Tk):
                     msg = str(e)
                     self.ui(lambda: (self.log("Tour failed: " + msg),
                                      messagebox.showerror("Tour", f"Couldn't build that tour:\n{msg}")))
-            threading.Thread(target=work, daemon=True).start()
+            self.run_bg(work, "building the tour")
         ttk.Button(win, text="Build it", command=go).grid(row=5, column=1, sticky="e", padx=6, pady=8)
 
     def _tour_done(self, idea):
@@ -8181,7 +8312,7 @@ class App(tk.Tk):
                 self.log("Twist failures repaired.")
             except Exception as e:
                 self.log(f"Repair: {e}")
-        threading.Thread(target=work, daemon=True).start()
+        self.run_bg(work, "repairing the scenery list")
 
 
 class AirportPicker(tk.Toplevel):

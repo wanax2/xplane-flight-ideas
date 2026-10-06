@@ -178,6 +178,40 @@ class Procs:
         return p.route(runway, transition) if p else []
 
 
+#: ARINC 424 approach-type letters: (what it is, does it have a glideslope?)
+#: None means "the code doesn't say" - an RNAV procedure may publish LPV, or only LNAV,
+#: and which one is on the plate rather than in the coded data.
+APPCH_KIND = {
+    "B": ("localizer back course", False),
+    "D": ("VOR/DME", False),
+    "F": ("FMS", False),
+    "G": ("IGS", True),
+    "I": ("ILS", True),
+    "J": ("GLS", True),
+    "L": ("localizer only", False),
+    "M": ("MLS", True),
+    "N": ("NDB", False),
+    "P": ("GPS", None),
+    "Q": ("NDB/DME", False),
+    "R": ("RNAV (GNSS)", None),
+    "S": ("VOR with DME required", False),
+    "T": ("TACAN", False),
+    "U": ("SDF", False),
+    "V": ("VOR", False),
+    "X": ("LDA", False),
+    "Y": ("MLS type B/C", True),
+}
+
+
+def appch_kind(name):
+    """(letter, what it is, has a glideslope) for a coded approach name like I16LZ."""
+    n = str(name or "").upper().strip()
+    if not n:
+        return "", "", None
+    what, gs = APPCH_KIND.get(n[0], ("", None))
+    return n[0], what, gs
+
+
 def appch_runway(name):
     """The runway an approach's coded name belongs to: I22 -> 22, R16L-Y -> 16L."""
     n = str(name or "").upper().split("-")[0]

@@ -1,4 +1,4 @@
-X-PLANE FLIGHT IDEAS  v6.14
+X-PLANE FLIGHT IDEAS  v6.15
 ========================
 
 Files
@@ -834,6 +834,42 @@ WHERE THE ONLINE DATA COMES FROM
    All of them are optional. The app works with no internet at all - it just
    uses your own X-Plane scenery instead.
 
+
+WHAT'S NEW IN 6.15
+   Hardening. Everything in this app that talks to something it doesn't control -
+   a simulator that may not be running, archives on the far side of the internet,
+   a folder Windows may not let it write - now fails in words instead of in a
+   traceback nobody reads.
+   - All 23 background jobs go through one safety net. A worker that raised used
+     to print to a console you never see and leave the status bar saying
+     "Working..." for ever. Now whatever happens, you are told what failed and
+     what to do about it: the service is busy, the service is broken at their
+     end, Windows won't let us write that, the disk is full, the reply wasn't
+     data. Never a stack trace.
+   - scenery_packs.ini is written to a temporary file and moved into place. A
+     half-written one is the worst thing this app could leave behind - X-Plane
+     would start with most of your scenery missing and nothing to say why - and
+     the move is atomic on Windows, so the file is either the old one or the new
+     one and never half of each. The backup is flushed to disk first, and the
+     folder is checked for writability before anything is touched.
+   - Settings are saved the same way, and saving can no longer raise. It returns
+     whether it worked; if it stops working the app says so once and carries on,
+     rather than throwing because you ticked a box while a disk was full.
+   - FIXED: a scenery pack listed by absolute path - which is how a streaming
+     package like XPME lists itself when it lives on another drive - was looked
+     for inside Custom Scenery, not found, and reported as missing. The fix-order
+     tool would then offer to tidy the line away. It now resolves absolute and
+     UNC paths properly.
+   - NEW CHECK: a pack with DSF tiles but no terrain folder is called out. That
+     is either an ortho set whose imagery half never finished extracting, or a
+     streaming package that isn't running - which is exactly the state that makes
+     X-Plane cancel every tile and fall back to default ground.
+   - NEW CHECK: the approach window reads your own CIFP data and says what is
+     actually published to that runway before giving you its own numbers. When
+     nothing published there has a glideslope it says so, and says that advisory
+     vertical guidance does not stop at the MDA. When the only procedures are
+     RNAV it says plainly that whether you get LPV or LNAV-only is on the plate
+     and not in the coded data.
 
 WHAT'S NEW IN 6.14
    Departures. The approach side of this app asks whether you will see the

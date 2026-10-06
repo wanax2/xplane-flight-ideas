@@ -39,7 +39,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from xp_wx import CONTINENTS, in_area   # noqa: E402  (lat/lon boxes for continents)
 
-VERSION = "6.14"
+VERSION = "6.15"
 CACHE_DIR = Path.home() / ".xp_flight_ideas"
 CACHE_FORMAT = 10
 
@@ -658,11 +658,41 @@ def load_config() -> dict:
         return {}
 
 
+#: why the last settings save failed, for whoever wants to tell the user
+SAVE_ERROR = None
+
+
 def save_config(**kw):
+    """Save the settings. Returns True, or False with the reason in SAVE_ERROR.
+
+    Called from dozens of places, most of them a side effect of someone ticking a
+    box - so it must not raise. Losing your settings is annoying; a traceback
+    because a disk filled up while you ticked a box is worse. Written to a
+    temporary file and moved into place so a failure halfway through leaves the
+    old settings intact rather than half of each.
+    """
+    global SAVE_ERROR
     cfg = load_config()
     cfg.update(kw)
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    (CACHE_DIR / "config.json").write_text(json.dumps(cfg, indent=1))
+    target = CACHE_DIR / "config.json"
+    tmp = target.with_name("config.json.tmp")
+    try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(json.dumps(cfg, indent=1))
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, target)
+        SAVE_ERROR = None
+        return True
+    except OSError as e:
+        SAVE_ERROR = str(e)
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+        return False
 
 
 # ==========================================================================
